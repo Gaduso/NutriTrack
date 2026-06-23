@@ -14,6 +14,7 @@
   <link rel="apple-touch-icon" href="/static/icon-192.png" />
 
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
   <style>
     body {
       -webkit-tap-highlight-color: transparent;
@@ -100,6 +101,51 @@
       <button id="analyze-btn"
         class="bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
         <span>Analysieren &amp; Hinzufügen</span>
+      </button>
+    </div>
+
+    <!-- Photo + Barcode -->
+    <div class="grid grid-cols-2 gap-3 mt-3">
+      <button id="photo-btn"
+        class="bg-slate-800 hover:bg-slate-700 border border-slate-700 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+        <span>📷 Foto</span>
+      </button>
+      <button id="scan-btn"
+        class="bg-slate-800 hover:bg-slate-700 border border-slate-700 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+        <span>🔳 Barcode</span>
+      </button>
+    </div>
+    <input id="photo-input" type="file" accept="image/*" capture="environment" class="hidden" />
+
+    <!-- Scan result (barcode -> OpenFoodFacts, weight editable) -->
+    <div id="scan-result" class="hidden bg-slate-800 rounded-2xl p-4 border border-slate-700 mt-4 animate-fade">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold">Produkt</h2>
+        <button id="scan-result-close" class="text-slate-400 hover:text-slate-200 text-sm">✕</button>
+      </div>
+      <input id="sr-name" type="text" placeholder="Produktname"
+        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-emerald-500" />
+      <div class="grid grid-cols-3 gap-2 items-end">
+        <div>
+          <label class="block text-slate-400 text-xs mb-1">Gewicht (g)</label>
+          <input id="sr-weight" type="number" min="0" step="1"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-right focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-slate-400 text-xs mb-1">kcal</label>
+          <input id="sr-kcal" type="number" min="0"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-right focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-slate-400 text-xs mb-1">Protein g</label>
+          <input id="sr-protein" type="number" min="0" step="0.1"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-right focus:outline-none focus:border-emerald-500" />
+        </div>
+      </div>
+      <p id="sr-base" class="text-slate-500 text-xs mt-2"></p>
+      <button id="sr-save"
+        class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-2.5 mt-4 font-semibold flex items-center justify-center gap-2">
+        <span>Hinzufügen</span>
       </button>
     </div>
 
@@ -199,6 +245,16 @@
         <span>Speichern</span>
       </button>
     </div>
+  </div>
+
+  <!-- ============ BARCODE SCANNER OVERLAY ============ -->
+  <div id="scanner-modal" class="hidden fixed inset-0 z-50 flex flex-col bg-slate-900">
+    <div class="flex items-center justify-between p-4">
+      <h2 class="font-semibold">Barcode scannen</h2>
+      <button id="scanner-close" class="text-slate-400 hover:text-slate-200 text-lg">✕</button>
+    </div>
+    <div id="reader" class="flex-1 w-full"></div>
+    <p id="scanner-hint" class="text-slate-400 text-sm text-center p-4">Halte den Barcode in den Rahmen…</p>
   </div>
 
   <script>
@@ -564,6 +620,143 @@
         alert(err.message);
       } finally {
         setLoading($("m-save"), false);
+      }
+    });
+
+    // ---------- Photo analysis ----------
+    function fileToResizedDataURL(file, maxDim = 1024, quality = 0.7) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            let { width, height } = img;
+            if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+            else if (height >= width && height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+            const canvas = document.createElement("canvas");
+            canvas.width = width; canvas.height = height;
+            canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", quality));
+          };
+          img.onerror = reject;
+          img.src = reader.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    $("photo-btn").addEventListener("click", () => $("photo-input").click());
+    $("photo-input").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      setLoading($("photo-btn"), true);
+      try {
+        const dataUrl = await fileToResizedDataURL(file);
+        const result = await api("/api/meal/analyze-image", { method: "POST", body: { image: dataUrl } });
+        if (!result.items || !result.items.length) { alert("Keine Lebensmittel im Foto erkannt."); return; }
+        renderPreview(result, "Foto-Analyse");
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setLoading($("photo-btn"), false);
+        e.target.value = "";
+      }
+    });
+
+    // ---------- Barcode scanner (OpenFoodFacts) ----------
+    let html5qr = null;
+    let scanBusy = false;
+
+    async function openScanner() {
+      if (typeof Html5Qrcode === "undefined") { alert("Scanner lädt noch – bitte gleich erneut versuchen."); return; }
+      scanBusy = false;
+      $("scanner-hint").textContent = "Halte den Barcode in den Rahmen…";
+      $("scanner-modal").classList.remove("hidden");
+      html5qr = new Html5Qrcode("reader");
+      const config = { fps: 10, qrbox: { width: 250, height: 160 } };
+      if (typeof Html5QrcodeSupportedFormats !== "undefined") {
+        config.formatsToSupport = [
+          Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE,
+        ];
+      }
+      try {
+        await html5qr.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
+      } catch (err) {
+        alert("Kamera konnte nicht gestartet werden: " + err);
+        closeScanner();
+      }
+    }
+
+    async function closeScanner() {
+      if (html5qr) {
+        try { await html5qr.stop(); html5qr.clear(); } catch (_) {}
+        html5qr = null;
+      }
+      $("scanner-modal").classList.add("hidden");
+    }
+
+    async function onScanSuccess(decodedText) {
+      if (scanBusy) return;
+      scanBusy = true;
+      $("scanner-hint").textContent = "Suche Produkt…";
+      await closeScanner();
+      try {
+        const p = await api("/api/product/" + encodeURIComponent(decodedText.trim()));
+        showScanResult(p);
+      } catch (err) {
+        alert(err.message + "\nDu kannst das Produkt manuell eintragen.");
+      } finally {
+        scanBusy = false;
+      }
+    }
+
+    $("scan-btn").addEventListener("click", openScanner);
+    $("scanner-close").addEventListener("click", closeScanner);
+
+    function showScanResult(p) {
+      $("sr-name").value = p.name + (p.brand ? ` (${p.brand})` : "");
+      $("sr-weight").value = Math.round(p.weight_g);
+      $("sr-kcal").value = p.kcal;
+      $("sr-protein").value = p.protein;
+      $("scan-result").dataset.kcal100 = p.kcal_per_100g;
+      $("scan-result").dataset.protein100 = p.protein_per_100g;
+      $("sr-base").textContent = `Basis: ${p.kcal_per_100g} kcal · ${p.protein_per_100g} g Protein / 100 g`;
+      $("scan-result").classList.remove("hidden");
+      $("scan-result").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    $("sr-weight").addEventListener("input", () => {
+      const w = parseFloat($("sr-weight").value || 0);
+      const k100 = parseFloat($("scan-result").dataset.kcal100 || 0);
+      const p100 = parseFloat($("scan-result").dataset.protein100 || 0);
+      $("sr-kcal").value = Math.round(k100 * w / 100);
+      $("sr-protein").value = Math.round(p100 * w / 100 * 10) / 10;
+    });
+    $("scan-result-close").addEventListener("click", () => $("scan-result").classList.add("hidden"));
+
+    $("sr-save").addEventListener("click", async () => {
+      const name = $("sr-name").value.trim();
+      if (!name) { $("sr-name").focus(); return; }
+      const w = parseInt($("sr-weight").value || 0, 10);
+      const item = {
+        name,
+        amount: w ? `${w} g` : "",
+        kcal: parseInt($("sr-kcal").value || 0, 10),
+        protein: parseFloat($("sr-protein").value || 0),
+      };
+      setLoading($("sr-save"), true);
+      try {
+        await api("/api/meal/save", { method: "POST", body: { raw_text: "", meal_type: selectedMealType, items: [item] } });
+        $("scan-result").classList.add("hidden");
+        loadDashboard();
+        loadStats(currentPeriod);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setLoading($("sr-save"), false);
       }
     });
 

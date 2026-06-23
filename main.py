@@ -10,7 +10,8 @@ from starlette.requests import Request
 
 import auth
 from database import MEAL_TYPES, get_connection, init_db
-from openrouter_client import analyze_meal
+from openfoodfacts import lookup_product
+from openrouter_client import analyze_meal, analyze_meal_image
 
 app = FastAPI(title="NutriTrack AI")
 templates = Jinja2Templates(directory="templates")
@@ -34,6 +35,11 @@ class Credentials(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     text: str = Field(min_length=1)
+
+
+class ImageRequest(BaseModel):
+    # Base64 data URL, e.g. "data:image/jpeg;base64,...."
+    image: str = Field(min_length=1)
 
 
 class MealItem(BaseModel):
@@ -121,6 +127,21 @@ def update_profile(body: ProfileUpdate, user=Depends(auth.get_current_user)):
 @app.post("/api/meal/analyze")
 async def meal_analyze(req: AnalyzeRequest, user=Depends(auth.get_current_user)):
     return await analyze_meal(req.text)
+
+
+@app.post("/api/meal/analyze-image")
+async def meal_analyze_image(req: ImageRequest, user=Depends(auth.get_current_user)):
+    if not req.image.startswith("data:image/"):
+        raise HTTPException(status_code=400, detail="Ungültiges Bildformat (Data-URL erwartet).")
+    # ~6 MB base64 cap to keep payloads sane on the free tier.
+    if len(req.image) > 8_000_000:
+        raise HTTPException(status_code=413, detail="Bild zu groß. Bitte kleiner aufnehmen.")
+    return await analyze_meal_image(req.image)
+
+
+@app.get("/api/product/{barcode}")
+async def product_lookup(barcode: str, user=Depends(auth.get_current_user)):
+    return await lookup_product(barcode)
 
 
 @app.post("/api/meal/save")

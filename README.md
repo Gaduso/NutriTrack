@@ -6,6 +6,9 @@ gehostet auf Render.com.
 
 ## Features
 - 📝 Freitext-Eingabe ("100g Nudeln mit 50g Faschiertem") → KI schätzt kcal & Protein
+- 📷 Foto-Analyse: Essensfoto → Gemma 4 (multimodal) schätzt kcal & Protein
+- 🔳 Barcode-Scan: Produkt + Nährwerte + Gewicht via OpenFoodFacts, Gewicht editierbar
+  (kcal/Protein skalieren automatisch mit)
 - ✏️ Werte vor dem Speichern editierbar (Vorschau-Tabelle)
 - ⌨️ Manuelle Einträge ohne KI (Name, Menge, kcal, Protein)
 - 🍽️ Kategorisierung nach Frühstück / Mittag / Abend / Snack — mit smartem
@@ -41,7 +44,8 @@ additiver Migrationen — kein manueller Migrationsschritt nötig.
 main.py               FastAPI-App & API-Endpoints
 auth.py               Registrierung, Login, JWT
 database.py           PostgreSQL-Schema & Verbindungen (psycopg)
-openrouter_client.py  OpenRouter-HTTP-Client (httpx)
+openrouter_client.py  OpenRouter-HTTP-Client: Text- & Bild-Analyse (httpx)
+openfoodfacts.py      Barcode-Lookup via OpenFoodFacts (httpx)
 config.py             Konfiguration / Env-Variablen
 templates/index.html  Frontend (PWA, Tailwind, Vanilla JS)
 static/               manifest.json + Icons

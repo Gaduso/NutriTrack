@@ -25,6 +25,17 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Wrapper:
 }
 Wenn keine Mengenangabe vorhanden ist, schätze eine realistische Standardportion."""
 
+VISION_PROMPT = """Du bist ein präziser Ernährungsberater-Bot. Analysiere das Foto des Essens und schätze die abgebildeten Lebensmittel, deren Portionsgröße/Gewicht, Kalorien (kcal) und Protein (g).
+Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Wrapper:
+{
+  "items": [
+    {"name": "Spaghetti Bolognese", "amount": "350g", "kcal": 520, "protein": 22.0}
+  ],
+  "total_kcal": 520,
+  "total_protein": 22.0
+}
+Schätze realistische Standardportionen, wenn die Menge nicht eindeutig erkennbar ist."""
+
 
 def _extract_json(content: str) -> dict:
     """Pull a JSON object out of the model response, tolerating markdown fences."""
@@ -71,23 +82,24 @@ def _normalize(data: dict) -> dict:
     return {"items": items, "total_kcal": total_kcal, "total_protein": total_protein}
 
 
-async def analyze_meal(raw_text: str) -> dict:
+async def _post_chat(messages: list, timeout: float = 60.0) -> dict:
+    """POST a chat-completion request to OpenRouter and return the normalized result."""
     headers = {
         "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
-    body = {
-        "model": settings.OPENROUTER_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": raw_text},
-        ],
-    }
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    body = {"model": settings.OPENROUTER_MODEL, "messages": messages}
+    async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             resp = await client.post(settings.OPENROUTER_URL, headers=headers, json=body)
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429:
+                raise HTTPException(
+                    status_code=429,
+                    detail="KI-Limit erreicht (Free-Tier) – bitte gleich erneut versuchen. "
+                    "Foto-Analyse ist im kostenlosen Modell stärker limitiert.",
+                )
             raise HTTPException(
                 status_code=502,
                 detail=f"OpenRouter-Fehler: {exc.response.status_code}",
@@ -102,3 +114,29 @@ async def analyze_meal(raw_text: str) -> dict:
         raise HTTPException(status_code=502, detail="Unerwartete KI-Antwortstruktur.")
 
     return _normalize(_extract_json(content))
+
+
+async def analyze_meal(raw_text: str) -> dict:
+    return await _post_chat(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": raw_text},
+        ]
+    )
+
+
+async def analyze_meal_image(image_data_url: str) -> dict:
+    """Analyze a food photo (base64 data URL) with the multimodal model."""
+    return await _post_chat(
+        [
+            {"role": "system", "content": VISION_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Analysiere dieses Essensfoto."},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ],
+            },
+        ],
+        timeout=90.0,
+    )
