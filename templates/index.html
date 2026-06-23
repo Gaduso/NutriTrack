@@ -2,7 +2,7 @@
 <html lang="de" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>NutriTrack AI</title>
 
   <!-- PWA / iOS Homescreen -->
@@ -18,6 +18,8 @@
   <style>
     body {
       -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;       /* disables double-tap-to-zoom */
+      overscroll-behavior-y: none;       /* no rubber-band/pull effects */
       /* iOS notch / camera safe areas (viewport-fit=cover) */
       padding-top: env(safe-area-inset-top);
       padding-bottom: env(safe-area-inset-bottom);
@@ -116,6 +118,7 @@
       </button>
     </div>
     <input id="photo-input" type="file" accept="image/*" capture="environment" class="hidden" />
+    <input id="barcode-input" type="file" accept="image/*" capture="environment" class="hidden" />
 
     <!-- Scan result (barcode -> OpenFoodFacts, weight editable) -->
     <div id="scan-result" class="hidden bg-slate-800 rounded-2xl p-4 border border-slate-700 mt-4 animate-fade">
@@ -247,15 +250,8 @@
     </div>
   </div>
 
-  <!-- ============ BARCODE SCANNER OVERLAY ============ -->
-  <div id="scanner-modal" class="hidden fixed inset-0 z-50 flex flex-col bg-slate-900">
-    <div class="flex items-center justify-between p-4">
-      <h2 class="font-semibold">Barcode scannen</h2>
-      <button id="scanner-close" class="text-slate-400 hover:text-slate-200 text-lg">✕</button>
-    </div>
-    <div id="reader" class="flex-1 w-full"></div>
-    <p id="scanner-hint" class="text-slate-400 text-sm text-center p-4">Halte den Barcode in den Rahmen…</p>
-  </div>
+  <!-- Off-screen container used by Html5Qrcode.scanFile to decode barcode photos -->
+  <div id="reader" style="position:absolute;width:0;height:0;overflow:hidden"></div>
 
   <script>
   (() => {
@@ -664,57 +660,34 @@
       }
     });
 
-    // ---------- Barcode scanner (OpenFoodFacts) ----------
-    let html5qr = null;
-    let scanBusy = false;
-
-    async function openScanner() {
-      if (typeof Html5Qrcode === "undefined") { alert("Scanner lädt noch – bitte gleich erneut versuchen."); return; }
-      scanBusy = false;
-      $("scanner-hint").textContent = "Halte den Barcode in den Rahmen…";
-      $("scanner-modal").classList.remove("hidden");
-      html5qr = new Html5Qrcode("reader");
-      const config = { fps: 10, qrbox: { width: 250, height: 160 } };
-      if (typeof Html5QrcodeSupportedFormats !== "undefined") {
-        config.formatsToSupport = [
-          Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.QR_CODE,
-        ];
+    // ---------- Barcode scan (photo -> decode -> OpenFoodFacts) ----------
+    // Live getUserMedia is unreliable inside iOS standalone PWAs, so we scan the
+    // barcode from a captured photo (same path as the working photo feature).
+    $("scan-btn").addEventListener("click", () => $("barcode-input").click());
+    $("barcode-input").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (typeof Html5Qrcode === "undefined") {
+        alert("Scanner lädt noch – bitte gleich erneut versuchen.");
+        e.target.value = "";
+        return;
       }
+      setLoading($("scan-btn"), true);
+      const scanner = new Html5Qrcode("reader", { verbose: false });
       try {
-        await html5qr.start({ facingMode: "environment" }, config, onScanSuccess, () => {});
-      } catch (err) {
-        alert("Kamera konnte nicht gestartet werden: " + err);
-        closeScanner();
-      }
-    }
-
-    async function closeScanner() {
-      if (html5qr) {
-        try { await html5qr.stop(); html5qr.clear(); } catch (_) {}
-        html5qr = null;
-      }
-      $("scanner-modal").classList.add("hidden");
-    }
-
-    async function onScanSuccess(decodedText) {
-      if (scanBusy) return;
-      scanBusy = true;
-      $("scanner-hint").textContent = "Suche Produkt…";
-      await closeScanner();
-      try {
-        const p = await api("/api/product/" + encodeURIComponent(decodedText.trim()));
+        const decoded = await scanner.scanFile(file, false);
+        const p = await api("/api/product/" + encodeURIComponent(decoded.trim()));
         showScanResult(p);
       } catch (err) {
-        alert(err.message + "\nDu kannst das Produkt manuell eintragen.");
+        const msg = (err && err.message) ? err.message : String(err);
+        alert("Kein Barcode erkannt oder Produkt nicht gefunden.\n" +
+              "Tipp: Barcode formatfüllend und scharf fotografieren.\n(" + msg + ")");
       } finally {
-        scanBusy = false;
+        try { scanner.clear(); } catch (_) {}
+        setLoading($("scan-btn"), false);
+        e.target.value = "";
       }
-    }
-
-    $("scan-btn").addEventListener("click", openScanner);
-    $("scanner-close").addEventListener("click", closeScanner);
+    });
 
     function showScanResult(p) {
       $("sr-name").value = p.name + (p.brand ? ` (${p.brand})` : "");

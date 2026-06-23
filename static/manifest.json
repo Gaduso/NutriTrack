@@ -3,6 +3,7 @@
   "short_name": "NutriTrack",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#0f172a",
   "theme_color": "#10b981",
   "icons": [
