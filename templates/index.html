@@ -15,10 +15,17 @@
 
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { -webkit-tap-highlight-color: transparent; }
+    body {
+      -webkit-tap-highlight-color: transparent;
+      /* iOS notch / camera safe areas (viewport-fit=cover) */
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
     .animate-fade { animation: fadeIn .25s ease-out; }
-    .spinner { border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 9999px; width: 1rem; height: 1rem; animation: spin .6s linear infinite; }
+    .spinner { border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 9999px; width: 1rem; height: 1rem; animation: spin .6s linear infinite; display:inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -50,13 +57,16 @@
   </div>
 
   <!-- ============ APP VIEW ============ -->
-  <div id="app-view" class="hidden max-w-xl mx-auto p-4 pb-16">
-    <header class="flex items-center justify-between mb-5 pt-2">
+  <div id="app-view" class="hidden max-w-xl mx-auto px-4 pb-16">
+    <header class="flex items-center justify-between mb-5 pt-4">
       <div class="flex items-center gap-2">
         <img src="/static/icon-192.png" class="w-8 h-8 rounded-lg" alt="logo" />
         <h1 class="text-xl font-bold">NutriTrack <span class="text-emerald-400">AI</span></h1>
       </div>
-      <button id="logout-btn" class="text-slate-400 hover:text-slate-200 text-sm">Abmelden</button>
+      <div class="flex items-center gap-3">
+        <button id="profile-btn" class="text-slate-400 hover:text-slate-200 text-xl" title="Profil / Ziele">⚙️</button>
+        <button id="logout-btn" class="text-slate-400 hover:text-slate-200 text-sm">Abmelden</button>
+      </div>
     </header>
 
     <!-- KPI Cards -->
@@ -64,13 +74,13 @@
       <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700">
         <p class="text-slate-400 text-xs uppercase tracking-wide">Kalorien</p>
         <p class="mt-1"><span id="kpi-kcal" class="text-3xl font-bold">0</span>
-          <span class="text-slate-400 text-sm">/ <span id="kpi-kcal-goal">{{ kcal_goal }}</span></span></p>
+          <span class="text-slate-400 text-sm">/ <span id="kpi-kcal-goal">–</span></span></p>
         <div class="w-full bg-slate-700 rounded-full h-1.5 mt-2"><div id="kpi-kcal-bar" class="bg-emerald-500 h-1.5 rounded-full" style="width:0%"></div></div>
       </div>
       <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700">
         <p class="text-slate-400 text-xs uppercase tracking-wide">Protein</p>
         <p class="mt-1"><span id="kpi-protein" class="text-3xl font-bold">0</span>
-          <span class="text-slate-400 text-sm">g / <span id="kpi-protein-goal">{{ protein_goal }}</span>g</span></p>
+          <span class="text-slate-400 text-sm">g / <span id="kpi-protein-goal">–</span>g</span></p>
         <div class="w-full bg-slate-700 rounded-full h-1.5 mt-2"><div id="kpi-protein-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width:0%"></div></div>
       </div>
     </div>
@@ -101,7 +111,7 @@
         <span class="text-slate-400">Summe</span>
         <span><b id="preview-total-kcal">0</b> kcal · <b id="preview-total-protein">0</b> g</span>
       </div>
-      <div id="preview-actions" class="mt-4">
+      <div class="mt-4">
         <button id="save-btn"
           class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
           <span>Bestätigen &amp; Speichern</span>
@@ -109,11 +119,61 @@
       </div>
     </div>
 
-    <!-- History -->
+    <!-- Today (individual items) -->
     <div class="mt-6">
       <h2 class="font-semibold mb-3 text-slate-300">Heute</h2>
       <div id="history" class="space-y-2"></div>
-      <p id="history-empty" class="text-slate-500 text-sm hidden">Noch keine Mahlzeiten heute.</p>
+      <p id="history-empty" class="text-slate-500 text-sm hidden">Noch keine Einträge heute.</p>
+    </div>
+
+    <!-- Stats overview -->
+    <div class="mt-8">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-slate-300">Übersicht</h2>
+        <div id="stats-tabs" class="flex bg-slate-800 border border-slate-700 rounded-xl p-1 text-sm">
+          <button data-period="week"  class="stat-tab px-3 py-1 rounded-lg">Woche</button>
+          <button data-period="month" class="stat-tab px-3 py-1 rounded-lg">Monat</button>
+          <button data-period="all"   class="stat-tab px-3 py-1 rounded-lg">Gesamt</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+          <p class="text-slate-400 text-xs uppercase tracking-wide">Ø kcal / Tag</p>
+          <p class="text-2xl font-bold mt-1" id="stat-avg-kcal">0</p>
+          <p class="text-slate-500 text-xs mt-1">Σ <span id="stat-total-kcal">0</span> kcal</p>
+        </div>
+        <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+          <p class="text-slate-400 text-xs uppercase tracking-wide">Ø Protein / Tag</p>
+          <p class="text-2xl font-bold mt-1"><span id="stat-avg-protein">0</span> g</p>
+          <p class="text-slate-500 text-xs mt-1">Σ <span id="stat-total-protein">0</span> g</p>
+        </div>
+      </div>
+      <p class="text-slate-500 text-xs mb-2"><span id="stat-days">0</span> Tage getrackt</p>
+
+      <div id="stat-daily" class="space-y-2"></div>
+      <p id="stat-empty" class="text-slate-500 text-sm hidden">Noch keine Daten in diesem Zeitraum.</p>
+    </div>
+  </div>
+
+  <!-- ============ PROFILE MODAL ============ -->
+  <div id="profile-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60">
+    <div class="w-full max-w-sm bg-slate-800 rounded-2xl p-6 border border-slate-700 animate-fade">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold">Tagesziele</h2>
+        <button id="profile-close" class="text-slate-400 hover:text-slate-200">✕</button>
+      </div>
+      <p class="text-slate-400 text-sm mb-4" id="profile-user"></p>
+      <label class="block text-sm text-slate-400 mb-1">Kalorien-Ziel (kcal)</label>
+      <input id="goal-kcal" type="number" min="0"
+        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-emerald-500" />
+      <label class="block text-sm text-slate-400 mb-1">Protein-Ziel (g)</label>
+      <input id="goal-protein" type="number" min="0" step="0.1"
+        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 mb-5 focus:outline-none focus:border-emerald-500" />
+      <button id="goal-save"
+        class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+        <span>Speichern</span>
+      </button>
     </div>
   </div>
 
@@ -122,7 +182,7 @@
     const API = "";
     const TOKEN_KEY = "nutritrack_token";
     let isRegister = false;
-    let saveMode = false; // true => "Analysieren & Hinzufügen" path
+    let currentPeriod = "week";
 
     const $ = (id) => document.getElementById(id);
     const token = () => localStorage.getItem(TOKEN_KEY);
@@ -141,17 +201,25 @@
       return data;
     }
 
-    function setLoading(btn, on, label) {
+    function setLoading(btn, on) {
       btn.disabled = on;
       btn.style.opacity = on ? "0.7" : "1";
       const span = btn.querySelector("span");
-      if (on) { btn.dataset.label = span.textContent; span.innerHTML = '<span class="spinner inline-block"></span>'; }
+      if (on) { btn.dataset.label = span.textContent; span.innerHTML = '<span class="spinner"></span>'; }
       else if (btn.dataset.label) { span.textContent = btn.dataset.label; }
     }
 
+    const escapeHtml = (s) =>
+      String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
     // ---------- Views ----------
     function showAuth() { $("auth-view").classList.remove("hidden"); $("app-view").classList.add("hidden"); }
-    function showApp() { $("auth-view").classList.add("hidden"); $("app-view").classList.remove("hidden"); loadDashboard(); }
+    function showApp() {
+      $("auth-view").classList.add("hidden");
+      $("app-view").classList.remove("hidden");
+      loadDashboard();
+      loadStats(currentPeriod);
+    }
 
     // ---------- Auth ----------
     $("auth-toggle").addEventListener("click", () => {
@@ -184,8 +252,42 @@
 
     $("logout-btn").addEventListener("click", () => { clearToken(); showAuth(); });
 
-    // ---------- Dashboard ----------
-    function pct(v, goal) { return Math.min(100, Math.round((v / goal) * 100)) + "%"; }
+    // ---------- Profile / Goals ----------
+    async function openProfile() {
+      try {
+        const p = await api("/api/profile");
+        $("profile-user").textContent = "Angemeldet als " + p.username;
+        $("goal-kcal").value = p.kcal_goal;
+        $("goal-protein").value = p.protein_goal;
+        $("profile-modal").classList.remove("hidden");
+      } catch (_) {}
+    }
+    $("profile-btn").addEventListener("click", openProfile);
+    $("profile-close").addEventListener("click", () => $("profile-modal").classList.add("hidden"));
+    $("profile-modal").addEventListener("click", (e) => {
+      if (e.target === $("profile-modal")) $("profile-modal").classList.add("hidden");
+    });
+    $("goal-save").addEventListener("click", async () => {
+      setLoading($("goal-save"), true);
+      try {
+        await api("/api/profile", {
+          method: "PUT",
+          body: {
+            kcal_goal: parseInt($("goal-kcal").value || 0, 10),
+            protein_goal: parseFloat($("goal-protein").value || 0),
+          },
+        });
+        $("profile-modal").classList.add("hidden");
+        loadDashboard();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setLoading($("goal-save"), false);
+      }
+    });
+
+    // ---------- Dashboard (today) ----------
+    const pct = (v, goal) => (goal > 0 ? Math.min(100, Math.round((v / goal) * 100)) : 0) + "%";
 
     async function loadDashboard() {
       try {
@@ -196,44 +298,83 @@
         $("kpi-protein").textContent = d.total_protein;
         $("kpi-protein-goal").textContent = d.protein_goal;
         $("kpi-protein-bar").style.width = pct(d.total_protein, d.protein_goal);
-        renderHistory(d.meals);
+        renderHistory(d.items);
       } catch (_) {}
     }
 
-    function renderHistory(meals) {
+    function renderHistory(items) {
       const wrap = $("history");
       wrap.innerHTML = "";
-      $("history-empty").classList.toggle("hidden", meals.length > 0);
-      meals.forEach((m) => {
+      $("history-empty").classList.toggle("hidden", items.length > 0);
+      items.forEach((it) => {
         const el = document.createElement("div");
-        el.className = "bg-slate-800 rounded-xl p-3 border border-slate-700 flex items-start justify-between gap-3 animate-fade";
-        const names = (m.items || []).map((i) => i.name).join(", ") || m.raw_text || "Mahlzeit";
-        const time = new Date(m.timestamp.replace(" ", "T") + "Z").toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+        el.className = "bg-slate-800 rounded-xl p-3 border border-slate-700 flex items-center justify-between gap-3 animate-fade";
+        const time = new Date(it.timestamp.replace(" ", "T") + "Z").toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+        const sub = [it.amount, `${it.kcal} kcal`, `${it.protein} g`, time].filter(Boolean).join(" · ");
         el.innerHTML = `
           <div class="min-w-0">
-            <p class="font-medium truncate">${escapeHtml(names)}</p>
-            <p class="text-slate-400 text-sm">${m.total_kcal} kcal · ${m.total_protein} g · ${time}</p>
+            <p class="font-medium truncate">${escapeHtml(it.name)}</p>
+            <p class="text-slate-400 text-sm">${escapeHtml(sub)}</p>
           </div>
-          <button data-id="${m.id}" class="del-btn text-slate-500 hover:text-rose-400 shrink-0" title="Löschen">🗑️</button>`;
+          <button data-id="${it.id}" class="del-btn text-slate-500 hover:text-rose-400 shrink-0" title="Löschen">🗑️</button>`;
         wrap.appendChild(el);
       });
       wrap.querySelectorAll(".del-btn").forEach((b) =>
         b.addEventListener("click", async () => {
           await api("/api/meal/" + b.dataset.id, { method: "DELETE" });
           loadDashboard();
+          loadStats(currentPeriod);
         })
       );
     }
 
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    // ---------- Stats (week / month / all) ----------
+    function highlightTab() {
+      document.querySelectorAll(".stat-tab").forEach((t) => {
+        const active = t.dataset.period === currentPeriod;
+        t.classList.toggle("bg-emerald-500", active);
+        t.classList.toggle("text-white", active);
+        t.classList.toggle("text-slate-400", !active);
+      });
     }
 
+    async function loadStats(period) {
+      currentPeriod = period;
+      highlightTab();
+      try {
+        const s = await api("/api/stats?period=" + period);
+        $("stat-avg-kcal").textContent = s.avg_kcal;
+        $("stat-avg-protein").textContent = s.avg_protein;
+        $("stat-total-kcal").textContent = s.total_kcal;
+        $("stat-total-protein").textContent = s.total_protein;
+        $("stat-days").textContent = s.days_tracked;
+        renderDaily(s.daily);
+      } catch (_) {}
+    }
+
+    function renderDaily(daily) {
+      const wrap = $("stat-daily");
+      wrap.innerHTML = "";
+      $("stat-empty").classList.toggle("hidden", daily.length > 0);
+      daily.forEach((d) => {
+        const el = document.createElement("div");
+        el.className = "bg-slate-800 rounded-xl p-3 border border-slate-700 flex items-center justify-between text-sm animate-fade";
+        const dateStr = new Date(d.date + "T00:00:00").toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" });
+        el.innerHTML = `
+          <span class="text-slate-300">${escapeHtml(dateStr)}</span>
+          <span class="text-slate-400"><b class="text-slate-100">${d.kcal}</b> kcal · <b class="text-slate-100">${d.protein}</b> g</span>`;
+        wrap.appendChild(el);
+      });
+    }
+
+    document.querySelectorAll(".stat-tab").forEach((t) =>
+      t.addEventListener("click", () => loadStats(t.dataset.period))
+    );
+
     // ---------- Analyze / Preview ----------
-    async function runAnalyze(btn, withSave) {
+    async function runAnalyze(btn) {
       const text = $("meal-input").value.trim();
       if (!text) return;
-      saveMode = withSave;
       setLoading(btn, true);
       try {
         const result = await api("/api/meal/analyze", { method: "POST", body: { text } });
@@ -245,8 +386,8 @@
       }
     }
 
-    $("estimate-btn").addEventListener("click", () => runAnalyze($("estimate-btn"), false));
-    $("analyze-btn").addEventListener("click", () => runAnalyze($("analyze-btn"), true));
+    $("estimate-btn").addEventListener("click", () => runAnalyze($("estimate-btn")));
+    $("analyze-btn").addEventListener("click", () => runAnalyze($("analyze-btn")));
     $("preview-close").addEventListener("click", () => $("preview").classList.add("hidden"));
 
     function recomputeTotals() {
@@ -283,7 +424,6 @@
       recomputeTotals();
       $("preview").dataset.rawText = rawText;
       $("preview").classList.remove("hidden");
-      // In "Nur Schätzen" mode we still allow saving — button stays available.
       $("preview").scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
@@ -297,18 +437,15 @@
           protein: parseFloat(row.querySelector(".inp-protein").value || 0),
         });
       });
-      const payload = {
-        raw_text: $("preview").dataset.rawText || "",
-        items,
-        total_kcal: parseInt($("preview-total-kcal").textContent, 10),
-        total_protein: parseFloat($("preview-total-protein").textContent),
-      };
+      if (!items.length) return;
+      const payload = { raw_text: $("preview").dataset.rawText || "", items };
       setLoading($("save-btn"), true);
       try {
         await api("/api/meal/save", { method: "POST", body: payload });
         $("preview").classList.add("hidden");
         $("meal-input").value = "";
         loadDashboard();
+        loadStats(currentPeriod);
       } catch (err) {
         alert(err.message);
       } finally {
@@ -317,6 +454,7 @@
     });
 
     // ---------- Boot ----------
+    highlightTab();
     if (token()) showApp(); else showAuth();
   })();
   </script>
