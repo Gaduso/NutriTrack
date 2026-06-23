@@ -5,6 +5,7 @@ Authorization: Bearer <KEY> header and a JSON body containing `model` and
 `messages`, then reads choices[0].message.content. We mirror that here with
 httpx.AsyncClient.
 """
+import asyncio
 import json
 import re
 
@@ -12,6 +13,11 @@ import httpx
 from fastapi import HTTPException
 
 from config import settings
+
+# Free-tier models rate-limit (429) — retry a few times before giving up.
+MAX_RETRIES = 3
+RETRY_BACKOFF = (2.0, 4.0, 8.0)  # seconds before each retry
+MAX_RETRY_AFTER = 12.0  # cap on honoring a server-sent Retry-After header
 
 SYSTEM_PROMPT = """Du bist ein präziser Ernährungsberater-Bot. Analysiere den folgenden Text und extrahiere die Lebensmittel, deren geschätztes Gewicht, Kalorien (kcal) und Protein (g).
 Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Wrapper:
@@ -82,38 +88,56 @@ def _normalize(data: dict) -> dict:
     return {"items": items, "total_kcal": total_kcal, "total_protein": total_protein}
 
 
+def _retry_delay(resp: httpx.Response, attempt: int) -> float:
+    """Honor a server-sent Retry-After header (capped), else exponential backoff."""
+    retry_after = resp.headers.get("retry-after")
+    if retry_after:
+        try:
+            return min(float(retry_after), MAX_RETRY_AFTER)
+        except ValueError:
+            pass
+    return RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+
+
 async def _post_chat(messages: list, timeout: float = 60.0) -> dict:
-    """POST a chat-completion request to OpenRouter and return the normalized result."""
+    """POST a chat-completion request to OpenRouter and return the normalized result.
+
+    Retries automatically on 429 (free-tier rate limit), respecting Retry-After.
+    """
     headers = {
         "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
     }
     body = {"model": settings.OPENROUTER_MODEL, "messages": messages}
+
     async with httpx.AsyncClient(timeout=timeout) as client:
-        try:
-            resp = await client.post(settings.OPENROUTER_URL, headers=headers, json=body)
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429:
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                resp = await client.post(settings.OPENROUTER_URL, headers=headers, json=body)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 and attempt < MAX_RETRIES:
+                    await asyncio.sleep(_retry_delay(exc.response, attempt))
+                    continue
+                if exc.response.status_code == 429:
+                    raise HTTPException(
+                        status_code=429,
+                        detail="KI-Limit erreicht (Free-Tier) – bitte gleich erneut versuchen. "
+                        "Foto-Analyse ist im kostenlosen Modell stärker limitiert.",
+                    )
                 raise HTTPException(
-                    status_code=429,
-                    detail="KI-Limit erreicht (Free-Tier) – bitte gleich erneut versuchen. "
-                    "Foto-Analyse ist im kostenlosen Modell stärker limitiert.",
+                    status_code=502,
+                    detail=f"OpenRouter-Fehler: {exc.response.status_code}",
                 )
-            raise HTTPException(
-                status_code=502,
-                detail=f"OpenRouter-Fehler: {exc.response.status_code}",
-            )
-        except httpx.HTTPError:
-            raise HTTPException(status_code=502, detail="OpenRouter nicht erreichbar.")
+            except httpx.HTTPError:
+                raise HTTPException(status_code=502, detail="OpenRouter nicht erreichbar.")
 
-    payload = resp.json()
-    try:
-        content = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        raise HTTPException(status_code=502, detail="Unerwartete KI-Antwortstruktur.")
-
-    return _normalize(_extract_json(content))
+            payload = resp.json()
+            try:
+                content = payload["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError):
+                raise HTTPException(status_code=502, detail="Unerwartete KI-Antwortstruktur.")
+            return _normalize(_extract_json(content))
 
 
 async def analyze_meal(raw_text: str) -> dict:
