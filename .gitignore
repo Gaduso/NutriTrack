@@ -33,4 +33,7 @@ Thumbs.db
 # Logs
 *.log
 
+# Temp commit message files
+COMMIT_MSG.txt
+
 example.txt

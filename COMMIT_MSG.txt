@@ -1,9 +1,0 @@
-Profile goals, per-item history, stats & iOS safe-area
-
-- Per-user kcal/protein-Tagesziele via /api/profile (GET/PUT) + Profil-Modal
-- meals jetzt eine Zeile pro Lebensmittel -> Einträge einzeln gelistet & löschbar
-- /api/stats (Woche/Monat/Gesamt): Σ + Ø pro Tag + Tagesaufschlüsselung
-- iOS safe-area-insets (Notch/Kamera) via env() im body-Padding
-- DB-Migration von altem grouped-meals-Schema auf Item-Zeilen
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
