@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -63,6 +64,21 @@ class ProfileUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def _safe_tz(tz: str) -> str:
+    """Return a valid IANA timezone name, falling back to UTC for bad input.
+
+    Used so days are bucketed by the user's local timezone, not the server's UTC.
+    """
+    tz = (tz or "").strip()
+    if not tz:
+        return "UTC"
+    try:
+        ZoneInfo(tz)
+        return tz
+    except Exception:
+        return "UTC"
+
+
 def _user_goals(conn, user_id: int) -> tuple[int, float]:
     row = conn.execute(
         "SELECT kcal_goal, protein_goal FROM users WHERE id = %s", (user_id,)
@@ -182,18 +198,20 @@ def meal_delete(meal_id: int, user=Depends(auth.get_current_user)):
 
 
 @app.get("/api/dashboard")
-def dashboard(user=Depends(auth.get_current_user)):
-    today = datetime.now(timezone.utc).date().isoformat()
+def dashboard(tz: str = Query("UTC"), user=Depends(auth.get_current_user)):
+    tz = _safe_tz(tz)
+    today = datetime.now(ZoneInfo(tz)).date().isoformat()
     with get_connection() as conn:
         kcal_goal, protein_goal = _user_goals(conn, user["id"])
         rows = conn.execute(
             """
             SELECT id, timestamp, raw_text, name, amount, kcal, protein, meal_type
             FROM meals
-            WHERE user_id = %s AND timestamp::date = CURRENT_DATE
+            WHERE user_id = %s
+              AND (timestamp AT TIME ZONE %s)::date = (now() AT TIME ZONE %s)::date
             ORDER BY timestamp DESC
             """,
-            (user["id"],),
+            (user["id"], tz, tz),
         ).fetchall()
 
     items = [dict(r) for r in rows]
@@ -222,28 +240,41 @@ def dashboard(user=Depends(auth.get_current_user)):
 @app.get("/api/stats")
 def stats(
     period: str = Query("week", pattern="^(week|month|all)$"),
+    tz: str = Query("UTC"),
     user=Depends(auth.get_current_user),
 ):
-    """Aggregated totals + per-day breakdown for week / month / all-time."""
-    where = "WHERE user_id = %s"
+    """Aggregated totals + per-day breakdown for week / month / all-time.
+
+    Days are bucketed by the user's local timezone (``tz``), not UTC.
+    """
+    tz = _safe_tz(tz)
+    day_expr = "(timestamp AT TIME ZONE %s)::date"
+
+    # Parameter order must match the %s occurrences below.
+    # GROUP BY / ORDER BY reference the output alias "day" so the tz parameter
+    # only appears in SELECT (and the optional period filter).
+    params: list = [tz, user["id"]]  # SELECT day_expr, then WHERE user_id
+    period_clause = ""
     if period == "week":
-        where += " AND timestamp::date >= CURRENT_DATE - INTERVAL '6 days'"
+        period_clause = f" AND {day_expr} >= (now() AT TIME ZONE %s)::date - INTERVAL '6 days'"
+        params += [tz, tz]
     elif period == "month":
-        where += " AND timestamp::date >= CURRENT_DATE - INTERVAL '29 days'"
+        period_clause = f" AND {day_expr} >= (now() AT TIME ZONE %s)::date - INTERVAL '29 days'"
+        params += [tz, tz]
 
     with get_connection() as conn:
         kcal_goal, protein_goal = _user_goals(conn, user["id"])
         daily_rows = conn.execute(
             f"""
-            SELECT timestamp::date AS day,
+            SELECT {day_expr} AS day,
                    SUM(kcal)    AS kcal,
                    SUM(protein) AS protein
             FROM meals
-            {where}
-            GROUP BY timestamp::date
+            WHERE user_id = %s{period_clause}
+            GROUP BY day
             ORDER BY day DESC
             """,
-            (user["id"],),
+            params,
         ).fetchall()
 
     daily = [

@@ -257,6 +257,8 @@
   (() => {
     const API = "";
     const TOKEN_KEY = "nutritrack_token";
+    // Bucket days by the user's local timezone, not the server's UTC.
+    const TZ = (Intl.DateTimeFormat().resolvedOptions().timeZone) || "UTC";
     let isRegister = false;
     let currentPeriod = "week";
 
@@ -384,7 +386,7 @@
 
     async function loadDashboard() {
       try {
-        const d = await api("/api/dashboard");
+        const d = await api("/api/dashboard?tz=" + encodeURIComponent(TZ));
         $("kpi-kcal").textContent = d.total_kcal;
         $("kpi-kcal-goal").textContent = d.kcal_goal;
         $("kpi-kcal-bar").style.width = pct(d.total_kcal, d.kcal_goal);
@@ -451,7 +453,7 @@
       currentPeriod = period;
       highlightTab();
       try {
-        const s = await api("/api/stats?period=" + period);
+        const s = await api("/api/stats?period=" + period + "&tz=" + encodeURIComponent(TZ));
         $("stat-avg-kcal").textContent = s.avg_kcal;
         $("stat-avg-protein").textContent = s.avg_protein;
         $("stat-total-kcal").textContent = s.total_kcal;

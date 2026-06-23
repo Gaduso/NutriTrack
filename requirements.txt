@@ -6,5 +6,6 @@ bcrypt<4.1
 httpx
 psycopg[binary]
 pydantic-settings
+tzdata
 jinja2
 python-multipart
