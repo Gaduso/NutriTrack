@@ -4,6 +4,7 @@ pyjwt
 passlib[bcrypt]
 bcrypt<4.1
 httpx
+psycopg[binary]
 pydantic-settings
 jinja2
 python-multipart

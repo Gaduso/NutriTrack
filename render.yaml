@@ -6,15 +6,11 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
+      # PostgreSQL connection string. Set this in the Render dashboard to the
+      # database's Internal Connection URL, or link an existing DB resource.
+      - key: DATABASE_URL
+        sync: false
       - key: OPENROUTER_API_KEY
         sync: false
       - key: JWT_SECRET
         generateValue: true
-      - key: DATABASE_URL
-        value: /data/nutritrack.db
-      - key: RENDER
-        value: "true"
-    disk:
-      name: nutritrack-data
-      mountPath: /data
-      sizeGB: 1

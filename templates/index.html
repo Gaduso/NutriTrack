@@ -85,6 +85,9 @@
       </div>
     </div>
 
+    <!-- Meal-type selector (shared by AI + manual entry; smart default by time) -->
+    <div id="mealtype-tabs" class="grid grid-cols-4 gap-2 mb-3"></div>
+
     <!-- Input -->
     <textarea id="meal-input" rows="3" placeholder="Was hast du gegessen?..."
       class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 focus:outline-none focus:border-emerald-500 resize-none"></textarea>
@@ -97,6 +100,27 @@
       <button id="analyze-btn"
         class="bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
         <span>Analysieren &amp; Hinzufügen</span>
+      </button>
+    </div>
+
+    <!-- Manual entry (collapsible) -->
+    <button id="manual-toggle" class="w-full mt-3 text-slate-400 hover:text-slate-200 text-sm flex items-center justify-center gap-1">
+      <span id="manual-toggle-icon">＋</span> Manueller Eintrag
+    </button>
+    <div id="manual-form" class="hidden bg-slate-800 rounded-2xl p-4 border border-slate-700 mt-2 animate-fade space-y-3">
+      <input id="m-name" type="text" placeholder="Bezeichnung (z.B. Apfel)"
+        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+      <div class="grid grid-cols-3 gap-2">
+        <input id="m-amount" type="text" placeholder="Menge"
+          class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+        <input id="m-kcal" type="number" min="0" placeholder="kcal"
+          class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-right focus:outline-none focus:border-emerald-500" />
+        <input id="m-protein" type="number" min="0" step="0.1" placeholder="Protein g"
+          class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-right focus:outline-none focus:border-emerald-500" />
+      </div>
+      <button id="m-save"
+        class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-2.5 font-semibold flex items-center justify-center gap-2">
+        <span>Hinzufügen</span>
       </button>
     </div>
 
@@ -183,6 +207,23 @@
     const TOKEN_KEY = "nutritrack_token";
     let isRegister = false;
     let currentPeriod = "week";
+
+    // Meal categories — order matters for grouping/display.
+    const MEAL_TYPES = [
+      { key: "breakfast", label: "Frühstück", icon: "🌅" },
+      { key: "lunch",     label: "Mittag",    icon: "☀️" },
+      { key: "dinner",    label: "Abend",     icon: "🌙" },
+      { key: "snack",     label: "Snack",     icon: "🍪" },
+    ];
+    const MT = Object.fromEntries(MEAL_TYPES.map((m) => [m.key, m]));
+    function defaultMealType() {
+      const h = new Date().getHours();
+      if (h < 11) return "breakfast";
+      if (h < 15) return "lunch";
+      if (h >= 17 && h < 22) return "dinner";
+      return "snack";
+    }
+    let selectedMealType = defaultMealType();
 
     const $ = (id) => document.getElementById(id);
     const token = () => localStorage.getItem(TOKEN_KEY);
@@ -298,27 +339,43 @@
         $("kpi-protein").textContent = d.total_protein;
         $("kpi-protein-goal").textContent = d.protein_goal;
         $("kpi-protein-bar").style.width = pct(d.total_protein, d.protein_goal);
-        renderHistory(d.items);
+        renderHistory(d.items, d.by_type);
       } catch (_) {}
     }
 
-    function renderHistory(items) {
+    function renderHistory(items, byType) {
       const wrap = $("history");
       wrap.innerHTML = "";
       $("history-empty").classList.toggle("hidden", items.length > 0);
-      items.forEach((it) => {
-        const el = document.createElement("div");
-        el.className = "bg-slate-800 rounded-xl p-3 border border-slate-700 flex items-center justify-between gap-3 animate-fade";
-        const time = new Date(it.timestamp.replace(" ", "T") + "Z").toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-        const sub = [it.amount, `${it.kcal} kcal`, `${it.protein} g`, time].filter(Boolean).join(" · ");
-        el.innerHTML = `
-          <div class="min-w-0">
-            <p class="font-medium truncate">${escapeHtml(it.name)}</p>
-            <p class="text-slate-400 text-sm">${escapeHtml(sub)}</p>
-          </div>
-          <button data-id="${it.id}" class="del-btn text-slate-500 hover:text-rose-400 shrink-0" title="Löschen">🗑️</button>`;
-        wrap.appendChild(el);
+
+      // Group items by meal type, preserving category order.
+      MEAL_TYPES.forEach((mt) => {
+        const group = items.filter((it) => (it.meal_type || "snack") === mt.key);
+        if (!group.length) return;
+        const sub = (byType && byType[mt.key]) || { kcal: 0, protein: 0 };
+
+        const header = document.createElement("div");
+        header.className = "flex items-center justify-between mt-4 mb-2 first:mt-0";
+        header.innerHTML = `
+          <span class="font-medium text-slate-300">${mt.icon} ${mt.label}</span>
+          <span class="text-slate-500 text-xs">${sub.kcal} kcal · ${sub.protein} g</span>`;
+        wrap.appendChild(header);
+
+        group.forEach((it) => {
+          const el = document.createElement("div");
+          el.className = "bg-slate-800 rounded-xl p-3 border border-slate-700 flex items-center justify-between gap-3 animate-fade";
+          const time = new Date(it.timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+          const meta = [it.amount, `${it.kcal} kcal`, `${it.protein} g`, time].filter(Boolean).join(" · ");
+          el.innerHTML = `
+            <div class="min-w-0">
+              <p class="font-medium truncate">${escapeHtml(it.name)}</p>
+              <p class="text-slate-400 text-sm">${escapeHtml(meta)}</p>
+            </div>
+            <button data-id="${it.id}" class="del-btn text-slate-500 hover:text-rose-400 shrink-0" title="Löschen">🗑️</button>`;
+          wrap.appendChild(el);
+        });
       });
+
       wrap.querySelectorAll(".del-btn").forEach((b) =>
         b.addEventListener("click", async () => {
           await api("/api/meal/" + b.dataset.id, { method: "DELETE" });
@@ -438,7 +495,7 @@
         });
       });
       if (!items.length) return;
-      const payload = { raw_text: $("preview").dataset.rawText || "", items };
+      const payload = { raw_text: $("preview").dataset.rawText || "", meal_type: selectedMealType, items };
       setLoading($("save-btn"), true);
       try {
         await api("/api/meal/save", { method: "POST", body: payload });
@@ -453,7 +510,65 @@
       }
     });
 
+    // ---------- Meal-type selector ----------
+    function buildMealTypeTabs() {
+      const wrap = $("mealtype-tabs");
+      wrap.innerHTML = "";
+      MEAL_TYPES.forEach((mt) => {
+        const b = document.createElement("button");
+        b.dataset.key = mt.key;
+        b.className = "mt-tab rounded-xl py-2 text-sm border transition flex flex-col items-center gap-0.5";
+        b.innerHTML = `<span>${mt.icon}</span><span class="text-xs">${mt.label}</span>`;
+        b.addEventListener("click", () => { selectedMealType = mt.key; highlightMealType(); });
+        wrap.appendChild(b);
+      });
+      highlightMealType();
+    }
+    function highlightMealType() {
+      document.querySelectorAll(".mt-tab").forEach((t) => {
+        const active = t.dataset.key === selectedMealType;
+        t.classList.toggle("bg-emerald-500", active);
+        t.classList.toggle("border-emerald-500", active);
+        t.classList.toggle("text-white", active);
+        t.classList.toggle("bg-slate-800", !active);
+        t.classList.toggle("border-slate-700", !active);
+        t.classList.toggle("text-slate-300", !active);
+      });
+    }
+
+    // ---------- Manual entry ----------
+    $("manual-toggle").addEventListener("click", () => {
+      const f = $("manual-form");
+      const open = f.classList.toggle("hidden") === false;
+      $("manual-toggle-icon").textContent = open ? "－" : "＋";
+    });
+    $("m-save").addEventListener("click", async () => {
+      const name = $("m-name").value.trim();
+      if (!name) { $("m-name").focus(); return; }
+      const item = {
+        name,
+        amount: $("m-amount").value.trim(),
+        kcal: parseInt($("m-kcal").value || 0, 10),
+        protein: parseFloat($("m-protein").value || 0),
+      };
+      setLoading($("m-save"), true);
+      try {
+        await api("/api/meal/save", {
+          method: "POST",
+          body: { raw_text: "", meal_type: selectedMealType, items: [item] },
+        });
+        ["m-name", "m-amount", "m-kcal", "m-protein"].forEach((id) => ($(id).value = ""));
+        loadDashboard();
+        loadStats(currentPeriod);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setLoading($("m-save"), false);
+      }
+    });
+
     // ---------- Boot ----------
+    buildMealTypeTabs();
     highlightTab();
     if (token()) showApp(); else showAuth();
   })();

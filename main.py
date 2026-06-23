@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -8,12 +9,14 @@ from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 import auth
-from database import get_connection, init_db
+from database import MEAL_TYPES, get_connection, init_db
 from openrouter_client import analyze_meal
 
 app = FastAPI(title="NutriTrack AI")
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+MealType = Literal["breakfast", "lunch", "dinner", "snack"]
 
 
 @app.on_event("startup")
@@ -34,7 +37,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class MealItem(BaseModel):
-    name: str
+    name: str = Field(min_length=1)
     amount: str = ""
     kcal: int = 0
     protein: float = 0.0
@@ -42,6 +45,7 @@ class MealItem(BaseModel):
 
 class SaveRequest(BaseModel):
     raw_text: str = ""
+    meal_type: MealType = "snack"
     items: list[MealItem] = []
 
 
@@ -55,7 +59,7 @@ class ProfileUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 def _user_goals(conn, user_id: int) -> tuple[int, float]:
     row = conn.execute(
-        "SELECT kcal_goal, protein_goal FROM users WHERE id = ?", (user_id,)
+        "SELECT kcal_goal, protein_goal FROM users WHERE id = %s", (user_id,)
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden.")
@@ -101,7 +105,7 @@ def get_profile(user=Depends(auth.get_current_user)):
 def update_profile(body: ProfileUpdate, user=Depends(auth.get_current_user)):
     with get_connection() as conn:
         conn.execute(
-            "UPDATE users SET kcal_goal = ?, protein_goal = ? WHERE id = ?",
+            "UPDATE users SET kcal_goal = %s, protein_goal = %s WHERE id = %s",
             (body.kcal_goal, round(body.protein_goal, 1), user["id"]),
         )
     return {
@@ -121,20 +125,29 @@ async def meal_analyze(req: AnalyzeRequest, user=Depends(auth.get_current_user))
 
 @app.post("/api/meal/save")
 def meal_save(req: SaveRequest, user=Depends(auth.get_current_user)):
-    """Persist each food item as its own row so they list individually."""
+    """Persist each food item as its own row (AI result or a manual entry)."""
     if not req.items:
         raise HTTPException(status_code=400, detail="Keine Items zum Speichern.")
     ids = []
     with get_connection() as conn:
         for it in req.items:
-            cur = conn.execute(
+            row = conn.execute(
                 """
-                INSERT INTO meals (user_id, raw_text, name, amount, kcal, protein)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO meals (user_id, raw_text, name, amount, kcal, protein, meal_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
                 """,
-                (user["id"], req.raw_text, it.name, it.amount, it.kcal, it.protein),
-            )
-            ids.append(cur.lastrowid)
+                (
+                    user["id"],
+                    req.raw_text,
+                    it.name,
+                    it.amount,
+                    it.kcal,
+                    it.protein,
+                    req.meal_type,
+                ),
+            ).fetchone()
+            ids.append(row["id"])
     return {"ids": ids, "count": len(ids), "status": "saved"}
 
 
@@ -142,7 +155,7 @@ def meal_save(req: SaveRequest, user=Depends(auth.get_current_user)):
 def meal_delete(meal_id: int, user=Depends(auth.get_current_user)):
     with get_connection() as conn:
         conn.execute(
-            "DELETE FROM meals WHERE id = ? AND user_id = ?", (meal_id, user["id"])
+            "DELETE FROM meals WHERE id = %s AND user_id = %s", (meal_id, user["id"])
         )
     return {"status": "deleted"}
 
@@ -154,9 +167,9 @@ def dashboard(user=Depends(auth.get_current_user)):
         kcal_goal, protein_goal = _user_goals(conn, user["id"])
         rows = conn.execute(
             """
-            SELECT id, timestamp, raw_text, name, amount, kcal, protein
+            SELECT id, timestamp, raw_text, name, amount, kcal, protein, meal_type
             FROM meals
-            WHERE user_id = ? AND date(timestamp) = date('now')
+            WHERE user_id = %s AND timestamp::date = CURRENT_DATE
             ORDER BY timestamp DESC
             """,
             (user["id"],),
@@ -166,12 +179,21 @@ def dashboard(user=Depends(auth.get_current_user)):
     total_kcal = sum(r["kcal"] or 0 for r in rows)
     total_protein = round(sum(r["protein"] or 0.0 for r in rows), 1)
 
+    # Subtotals per meal category (always include all keys so the UI is stable).
+    by_type = {mt: {"kcal": 0, "protein": 0.0, "count": 0} for mt in MEAL_TYPES}
+    for r in rows:
+        b = by_type[r["meal_type"]] if r["meal_type"] in by_type else by_type["snack"]
+        b["kcal"] += r["kcal"] or 0
+        b["protein"] = round(b["protein"] + (r["protein"] or 0.0), 1)
+        b["count"] += 1
+
     return {
         "date": today,
         "total_kcal": total_kcal,
         "total_protein": total_protein,
         "kcal_goal": kcal_goal,
         "protein_goal": protein_goal,
+        "by_type": by_type,
         "items": items,
     }
 
@@ -182,33 +204,32 @@ def stats(
     user=Depends(auth.get_current_user),
 ):
     """Aggregated totals + per-day breakdown for week / month / all-time."""
-    where = "WHERE user_id = ?"
-    params: list = [user["id"]]
+    where = "WHERE user_id = %s"
     if period == "week":
-        where += " AND date(timestamp) >= date('now', '-6 days')"
+        where += " AND timestamp::date >= CURRENT_DATE - INTERVAL '6 days'"
     elif period == "month":
-        where += " AND date(timestamp) >= date('now', '-29 days')"
+        where += " AND timestamp::date >= CURRENT_DATE - INTERVAL '29 days'"
 
     with get_connection() as conn:
         kcal_goal, protein_goal = _user_goals(conn, user["id"])
         daily_rows = conn.execute(
             f"""
-            SELECT date(timestamp) AS day,
+            SELECT timestamp::date AS day,
                    SUM(kcal)    AS kcal,
                    SUM(protein) AS protein
             FROM meals
             {where}
-            GROUP BY date(timestamp)
+            GROUP BY timestamp::date
             ORDER BY day DESC
             """,
-            params,
+            (user["id"],),
         ).fetchall()
 
     daily = [
         {
-            "date": r["day"],
+            "date": r["day"].isoformat(),
             "kcal": int(r["kcal"] or 0),
-            "protein": round(r["protein"] or 0.0, 1),
+            "protein": round(float(r["protein"] or 0.0), 1),
         }
         for r in daily_rows
     ]

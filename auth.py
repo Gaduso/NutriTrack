@@ -38,15 +38,15 @@ def register_user(username: str, password: str) -> dict:
         raise HTTPException(status_code=400, detail="Benutzername und Passwort erforderlich.")
     with get_connection() as conn:
         existing = conn.execute(
-            "SELECT id FROM users WHERE username = ?", (username,)
+            "SELECT id FROM users WHERE username = %s", (username,)
         ).fetchone()
         if existing:
             raise HTTPException(status_code=409, detail="Benutzername bereits vergeben.")
         cur = conn.execute(
-            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
             (username, hash_password(password)),
         )
-        user_id = cur.lastrowid
+        user_id = cur.fetchone()["id"]
     token = create_access_token(user_id, username)
     return {"token": token, "username": username}
 
@@ -55,7 +55,7 @@ def authenticate_user(username: str, password: str) -> dict:
     username = username.strip()
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, username, password_hash FROM users WHERE username = ?",
+            "SELECT id, username, password_hash FROM users WHERE username = %s",
             (username,),
         ).fetchone()
     if not row or not verify_password(password, row["password_hash"]):
