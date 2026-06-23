@@ -1,0 +1,156 @@
+# PROJEKTPLAN: AI-GESTÜTZTER ERNÄHRUNGS-TRACKER (PWA) — RENDER.COM READY
+
+## 1. ÜBERSICHT & ZIELSETZUNG
+Das Ziel ist eine minimalistische, performante und mobil-optimierte Web-App (PWA) zum Tracken von Kalorien und Protein. Die App wird mit Python (FastAPI) gebaut, nutzt OpenRouter für die KI-Analyse und wird auf Render.com gehostet. Der Fokus liegt auf maximaler Usability via Freitext-Eingabe, persistentem iOS-Homescreen-Login und einem schicken Dark-Mode-Design.
+
+---
+
+## 2. TECH-STACK & HOSTING (RENDER.COM)
+* **Backend:** Python mit **FastAPI** & **Uvicorn** als ASGI-Server.
+* **Frontend:** HTML5, **Tailwind CSS** (via CDN), Vanilla JavaScript.
+* **Datenbank:** **SQLite**. Da das Dateisystem bei Render.com standardmäßig flüchtig (ephemeral) ist, muss ein **Render Persistent Disk** verwendet werden, um Datenverlust bei Redeploys zu verhindern.
+* **Hosting (Render.com) Spezifikationen:**
+    * **Build Command:** `pip install -r requirements.txt`
+    * **Start Command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
+    * **Environment Variables (Geheimnisse):**
+        * `OPENROUTER_API_KEY`: Dein API-Key für OpenRouter.
+        * `JWT_SECRET`: Ein sicherer, zufälliger String für die Token-Verschlüsselung.
+        * `DATABASE_URL`: Pfad zur persistenten Datenbank (z.B. `/data/nutritrack.db`).
+    * **Disk Mount Path:** `/data` (Größe: 1 GB reicht völlig aus).
+
+---
+
+## 3. PWA & IOS HOMESCREEN SPECIFICS
+Damit die App auf iOS perfekt als Standalone-Webapp läuft (ohne Safari-Leisten) und den Login im Hintergrund nicht verliert:
+
+* **`manifest.json` (im Verzeichnis `/static/`):**
+    ```json
+    {
+      "name": "NutriTrack AI",
+      "short_name": "NutriTrack",
+      "start_url": "/",
+      "display": "standalone",
+      "background_color": "#0f172a",
+      "theme_color": "#10b981",
+      "icons": [
+        { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+        { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" }
+      ]
+    }
+    ```
+* **iOS Meta-Tags im HTML-Header (`index.html`):**
+    ```html
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NutriTrack">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    ```
+* **Session-Persistenz:** Das JWT-Token (Gültigkeit: 1 Jahr) wird im `localStorage` des Browsers gespeichert und bei jedem API-Request im `Authorization: Bearer <token>` Header mitgesendet, da iOS Cookies im PWA-Modus unzuverlässig behandelt.
+
+---
+
+## 4. DATENBANK-MODELL (SQLITE — GESPEICHERT UNTER `/data/`)
+Der Datenbankpfad muss konfigurierbar sein (Standard für lokale Dev-Umgebung: `./nutritrack.db`, für Produktion auf Render: `/data/nutritrack.db`).
+
+### Tabelle: `users`
+* `id` (INTEGER, Primary Key)
+* `username` (TEXT, Unique)
+* `password_hash` (TEXT)
+* `created_at` (DATETIME)
+
+### Tabelle: `meals`
+* `id` (INTEGER, Primary Key)
+* `user_id` (INTEGER, Foreign Key)
+* `timestamp` (DATETIME, Default: Current Time)
+* `raw_text` (TEXT) — *z.B. "100g Nudeln mit 50g Faschiertem"*
+* `json_data` (TEXT) — *Das von der KI gelieferte JSON als String*
+* `total_kcal` (INTEGER)
+* `total_protein` (REAL)
+
+---
+
+## 5. KI-INTEGRATION (OPENROUTER API)
+Siehe example.txt für api key und beispiel
+**WICHTIG FÜR DEN AGENTEN:** Lies vor der Implementierung die bereitgestellte Datei `example.txt`. Diese enthält die genaue Struktur, die Endpoints und die Header-Konfiguration der OpenRouter API-Schnittstelle. Nutze diese als exakte Vorlage für den API-Client.
+
+* **System Prompt & Erwartetes JSON-Schema:**
+    Fordere das Modell (gemma-4-31b-it:free) im JSON-Modus an. Prompt-Struktur:
+    ```text
+    Du bist ein präziser Ernährungsberater-Bot. Analysiere den folgenden Text und extrahiere die Lebensmittel, deren geschätztes Gewicht, Kalorien (kcal) und Protein (g). 
+    Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Wrapper:
+    {
+      "items": [
+        {"name": "Nudeln gekocht", "amount": "100g", "kcal": 130, "protein": 5.0},
+        {"name": "Faschiertes vom Rind", "amount": "50g", "kcal": 125, "protein": 10.0}
+      ],
+      "total_kcal": 255,
+      "total_protein": 15.0
+    }
+    Wenn keine Mengenangabe vorhanden ist, schätze eine realistische Standardportion.
+    ```
+
+---
+
+## 6. UI/UX DESIGN ("SCHICK", MODERN & MINIMALISTISCH)
+* **Farbpalette (Modern Dark Mode):**
+    * Hintergrund: Slate Dark (`bg-slate-900`)
+    * Karten/Container: Slate Medium (`bg-slate-800`)
+    * Primär-Buttons / Speichern: Emerald Green (`bg-emerald-500`, `hover:bg-emerald-600`)
+    * Sekundär-Buttons / Schätzen: Indigo (`bg-indigo-600`, `hover:bg-indigo-700`)
+    * Text: Haupttext weiß (`text-slate-100`), Sekundärtext grau (`text-slate-400`)
+
+* **Layout (Single-Page-App-Feeling):**
+    1. **Tages-Counter:** Zwei große, nebeneinanderliegende KPI-Karten ganz oben: **[ Kalorien: X / Ziel ]** und **[ Protein: Y g ]**.
+    2. **Zentrales Textfeld:** Eine stylische `textarea` mit abgerundeten Ecken und feiner Border. Platzhalter: *"Was hast du gegessen?..."*
+    3. **Aktions-Buttons (Nebeneinander):**
+        * "Nur Schätzen" (Indigo) -> Führt die KI-Analyse aus, zeigt das Resultat in der Vorschau, speichert aber nicht.
+        * "Analysieren & Hinzufügen" (Emerald) -> Führt die Analyse aus, zeigt die Vorschau und öffnet den "Bestätigen & Speichern"-Workflow.
+    4. **Dynamische Vorschau-Sektion:** Erscheint animiert nach der KI-Antwort. Listet alle Items sauber in einer Tabelle auf. Werte (Kcal/Protein) können vor dem finalen Speichern in kleinen Input-Feldern editiert werden.
+    5. **Historie:** Liste der heutigen Mahlzeiten im unteren Bereich mit einem dezenten Mülleimer-Icon zum Löschen.
+
+
+## 7. SCHRITT-FÜR-SCHRITT IMPLEMENTIERUNGSANWEISUNG
+
+### Phase 1: Projektstruktur & Render-Vorbereitung
+1. Erstelle die Ordnerstruktur:
+   ```text
+   ├── main.py
+   ├── database.py
+   ├── auth.py
+   ├── config.py
+   ├── requirements.txt
+   ├── example.txt (vom User bereitgestellt)
+   ├── templates/
+   │   └── index.html
+   └── static/
+       ├── manifest.json
+       └── icon-192.png (suche ein passendes icon)
+
+
+
+2. Schreibe die `requirements.txt` (Inhalt: `fastapi`, `uvicorn`, `pyjwt`, `passlib[bcrypt]`, `httpx`, `pydantic-settings`).
+3. Erstelle in `config.py` die Konfiguration, die die Datenbank-URL standardmäßig auf `/data/nutritrack.db` setzt, falls die Umgebungsvariable auf Render existiert, andernfalls lokal auf `./nutritrack.db`. Stelle sicher, dass der Ordner `/data` automatisch per Python erstellt wird (`os.makedirs`), falls er lokal noch nicht existiert.
+
+### Phase 2: Backend-Logik & Datenbank
+
+1. Initialisiere die SQLite-Datenbank in `database.py` und erstelle die Tabellen für User und Mahlzeiten.
+2. Implementiere in `auth.py` die Benutzerregistrierung und das Login-System mit Passwort-Hashing (Bcrypt) und langlebigen JWT-Tokens (1 Jahr Gültigkeit).
+3. Erstelle die Endpunkte `/api/register` und `/api/login` in `main.py`.
+
+### Phase 3: OpenRouter-Client & API-Endpoints
+
+1. **WICHTIG:** Öffne `example.txt`, analysiere den Code und implementiere den HTTP-Client (`httpx.AsyncClient`) exakt nach dieser Vorlage.
+2. Erstelle den POST-Endpoint `/api/meal/analyze`. Dieser nimmt den Rohtext entgegen, schickt ihn an OpenRouter und liefert das strukturierte JSON (die Schätzung) zurück.
+3. Erstelle den POST-Endpoint `/api/meal/save`, der das (eventuell vom User editierte) JSON-Ergebnis final in der SQL-Datenbank abspeichert.
+4. Erstelle den GET-Endpoint `/api/dashboard`, der die heutigen Gesamtkalorien, das Gesamtprotein und die Liste der heutigen Mahlzeiten für den authentifizierten User zurückgibt.
+
+### Phase 4: Frontend (PWA & UI)
+
+1. Baue die `templates/index.html` auf Basis von Tailwind CSS im modernen Slate-Dark-Look.
+2. Implementiere die JavaScript-Logik:
+* Prüfe beim Laden, ob ein Token im `localStorage` existiert. Wenn nicht -> Zeige Login-Maske. Wenn ja -> Lade Dashboard-Daten.
+* Verbinde die Buttons für "Nur Schätzen" und "Analysieren & Hinzufügen" mit Lade-Animationen (Pulsieren/Spinner).
+* Generiere die dynamische Vorschau-Tabelle basierend auf dem KI-JSON, sodass der User Werte anpassen kann, bevor er auf den finalen "Speichern"-Button drückt.
+
+
+3. Lege die `manifest.json` in `/static/` an und binde sie im HTML ein, um die iOS-Homescreen-Fähigkeit zu aktivieren.

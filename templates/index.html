@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>NutriTrack AI</title>
+
+  <!-- PWA / iOS Homescreen -->
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#10b981" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NutriTrack" />
+  <link rel="apple-touch-icon" href="/static/icon-192.png" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade { animation: fadeIn .25s ease-out; }
+    .spinner { border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 9999px; width: 1rem; height: 1rem; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen antialiased">
+
+  <!-- ============ LOGIN VIEW ============ -->
+  <div id="auth-view" class="hidden min-h-screen flex items-center justify-center p-6">
+    <div class="w-full max-w-sm bg-slate-800 rounded-2xl p-8 shadow-xl border border-slate-700">
+      <div class="flex flex-col items-center mb-6">
+        <img src="/static/icon-192.png" class="w-16 h-16 rounded-xl mb-3" alt="logo" />
+        <h1 class="text-2xl font-bold">NutriTrack <span class="text-emerald-400">AI</span></h1>
+        <p class="text-slate-400 text-sm mt-1" id="auth-subtitle">Melde dich an, um zu tracken.</p>
+      </div>
+      <form id="auth-form" class="space-y-4">
+        <input id="username" type="text" autocomplete="username" placeholder="Benutzername"
+          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500" />
+        <input id="password" type="password" autocomplete="current-password" placeholder="Passwort"
+          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500" />
+        <p id="auth-error" class="text-rose-400 text-sm hidden"></p>
+        <button type="submit" id="auth-submit"
+          class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+          <span id="auth-submit-label">Anmelden</span>
+        </button>
+      </form>
+      <button id="auth-toggle" class="w-full text-slate-400 hover:text-slate-200 text-sm mt-4">
+        Noch kein Konto? Registrieren
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ APP VIEW ============ -->
+  <div id="app-view" class="hidden max-w-xl mx-auto p-4 pb-16">
+    <header class="flex items-center justify-between mb-5 pt-2">
+      <div class="flex items-center gap-2">
+        <img src="/static/icon-192.png" class="w-8 h-8 rounded-lg" alt="logo" />
+        <h1 class="text-xl font-bold">NutriTrack <span class="text-emerald-400">AI</span></h1>
+      </div>
+      <button id="logout-btn" class="text-slate-400 hover:text-slate-200 text-sm">Abmelden</button>
+    </header>
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-2 gap-3 mb-5">
+      <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+        <p class="text-slate-400 text-xs uppercase tracking-wide">Kalorien</p>
+        <p class="mt-1"><span id="kpi-kcal" class="text-3xl font-bold">0</span>
+          <span class="text-slate-400 text-sm">/ <span id="kpi-kcal-goal">{{ kcal_goal }}</span></span></p>
+        <div class="w-full bg-slate-700 rounded-full h-1.5 mt-2"><div id="kpi-kcal-bar" class="bg-emerald-500 h-1.5 rounded-full" style="width:0%"></div></div>
+      </div>
+      <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+        <p class="text-slate-400 text-xs uppercase tracking-wide">Protein</p>
+        <p class="mt-1"><span id="kpi-protein" class="text-3xl font-bold">0</span>
+          <span class="text-slate-400 text-sm">g / <span id="kpi-protein-goal">{{ protein_goal }}</span>g</span></p>
+        <div class="w-full bg-slate-700 rounded-full h-1.5 mt-2"><div id="kpi-protein-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <textarea id="meal-input" rows="3" placeholder="Was hast du gegessen?..."
+      class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 focus:outline-none focus:border-emerald-500 resize-none"></textarea>
+
+    <div class="grid grid-cols-2 gap-3 mt-3">
+      <button id="estimate-btn"
+        class="bg-indigo-600 hover:bg-indigo-700 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+        <span>Nur Schätzen</span>
+      </button>
+      <button id="analyze-btn"
+        class="bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+        <span>Analysieren &amp; Hinzufügen</span>
+      </button>
+    </div>
+
+    <!-- Preview -->
+    <div id="preview" class="hidden bg-slate-800 rounded-2xl p-4 border border-slate-700 mt-4 animate-fade">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold">Vorschau</h2>
+        <button id="preview-close" class="text-slate-400 hover:text-slate-200 text-sm">✕</button>
+      </div>
+      <div id="preview-items" class="space-y-2"></div>
+      <div class="flex justify-between items-center mt-4 pt-3 border-t border-slate-700 text-sm">
+        <span class="text-slate-400">Summe</span>
+        <span><b id="preview-total-kcal">0</b> kcal · <b id="preview-total-protein">0</b> g</span>
+      </div>
+      <div id="preview-actions" class="mt-4">
+        <button id="save-btn"
+          class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+          <span>Bestätigen &amp; Speichern</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="mt-6">
+      <h2 class="font-semibold mb-3 text-slate-300">Heute</h2>
+      <div id="history" class="space-y-2"></div>
+      <p id="history-empty" class="text-slate-500 text-sm hidden">Noch keine Mahlzeiten heute.</p>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    const API = "";
+    const TOKEN_KEY = "nutritrack_token";
+    let isRegister = false;
+    let saveMode = false; // true => "Analysieren & Hinzufügen" path
+
+    const $ = (id) => document.getElementById(id);
+    const token = () => localStorage.getItem(TOKEN_KEY);
+    const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
+    const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+    async function api(path, { method = "GET", body } = {}) {
+      const headers = { "Content-Type": "application/json" };
+      if (token()) headers["Authorization"] = "Bearer " + token();
+      const res = await fetch(API + path, {
+        method, headers, body: body ? JSON.stringify(body) : undefined,
+      });
+      if (res.status === 401) { clearToken(); showAuth(); throw new Error("401"); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Fehler");
+      return data;
+    }
+
+    function setLoading(btn, on, label) {
+      btn.disabled = on;
+      btn.style.opacity = on ? "0.7" : "1";
+      const span = btn.querySelector("span");
+      if (on) { btn.dataset.label = span.textContent; span.innerHTML = '<span class="spinner inline-block"></span>'; }
+      else if (btn.dataset.label) { span.textContent = btn.dataset.label; }
+    }
+
+    // ---------- Views ----------
+    function showAuth() { $("auth-view").classList.remove("hidden"); $("app-view").classList.add("hidden"); }
+    function showApp() { $("auth-view").classList.add("hidden"); $("app-view").classList.remove("hidden"); loadDashboard(); }
+
+    // ---------- Auth ----------
+    $("auth-toggle").addEventListener("click", () => {
+      isRegister = !isRegister;
+      $("auth-submit-label").textContent = isRegister ? "Registrieren" : "Anmelden";
+      $("auth-subtitle").textContent = isRegister ? "Erstelle dein Konto." : "Melde dich an, um zu tracken.";
+      $("auth-toggle").textContent = isRegister ? "Schon ein Konto? Anmelden" : "Noch kein Konto? Registrieren";
+      $("auth-error").classList.add("hidden");
+    });
+
+    $("auth-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = $("username").value.trim();
+      const password = $("password").value;
+      $("auth-error").classList.add("hidden");
+      setLoading($("auth-submit"), true);
+      try {
+        const data = await api(isRegister ? "/api/register" : "/api/login", {
+          method: "POST", body: { username, password },
+        });
+        setToken(data.token);
+        showApp();
+      } catch (err) {
+        $("auth-error").textContent = err.message;
+        $("auth-error").classList.remove("hidden");
+      } finally {
+        setLoading($("auth-submit"), false);
+      }
+    });
+
+    $("logout-btn").addEventListener("click", () => { clearToken(); showAuth(); });
+
+    // ---------- Dashboard ----------
+    function pct(v, goal) { return Math.min(100, Math.round((v / goal) * 100)) + "%"; }
+
+    async function loadDashboard() {
+      try {
+        const d = await api("/api/dashboard");
+        $("kpi-kcal").textContent = d.total_kcal;
+        $("kpi-kcal-goal").textContent = d.kcal_goal;
+        $("kpi-kcal-bar").style.width = pct(d.total_kcal, d.kcal_goal);
+        $("kpi-protein").textContent = d.total_protein;
+        $("kpi-protein-goal").textContent = d.protein_goal;
+        $("kpi-protein-bar").style.width = pct(d.total_protein, d.protein_goal);
+        renderHistory(d.meals);
+      } catch (_) {}
+    }
+
+    function renderHistory(meals) {
+      const wrap = $("history");
+      wrap.innerHTML = "";
+      $("history-empty").classList.toggle("hidden", meals.length > 0);
+      meals.forEach((m) => {
+        const el = document.createElement("div");
+        el.className = "bg-slate-800 rounded-xl p-3 border border-slate-700 flex items-start justify-between gap-3 animate-fade";
+        const names = (m.items || []).map((i) => i.name).join(", ") || m.raw_text || "Mahlzeit";
+        const time = new Date(m.timestamp.replace(" ", "T") + "Z").toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+        el.innerHTML = `
+          <div class="min-w-0">
+            <p class="font-medium truncate">${escapeHtml(names)}</p>
+            <p class="text-slate-400 text-sm">${m.total_kcal} kcal · ${m.total_protein} g · ${time}</p>
+          </div>
+          <button data-id="${m.id}" class="del-btn text-slate-500 hover:text-rose-400 shrink-0" title="Löschen">🗑️</button>`;
+        wrap.appendChild(el);
+      });
+      wrap.querySelectorAll(".del-btn").forEach((b) =>
+        b.addEventListener("click", async () => {
+          await api("/api/meal/" + b.dataset.id, { method: "DELETE" });
+          loadDashboard();
+        })
+      );
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    // ---------- Analyze / Preview ----------
+    async function runAnalyze(btn, withSave) {
+      const text = $("meal-input").value.trim();
+      if (!text) return;
+      saveMode = withSave;
+      setLoading(btn, true);
+      try {
+        const result = await api("/api/meal/analyze", { method: "POST", body: { text } });
+        renderPreview(result, text);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    $("estimate-btn").addEventListener("click", () => runAnalyze($("estimate-btn"), false));
+    $("analyze-btn").addEventListener("click", () => runAnalyze($("analyze-btn"), true));
+    $("preview-close").addEventListener("click", () => $("preview").classList.add("hidden"));
+
+    function recomputeTotals() {
+      let kcal = 0, protein = 0;
+      document.querySelectorAll("#preview-items [data-row]").forEach((row) => {
+        kcal += parseInt(row.querySelector(".inp-kcal").value || 0, 10);
+        protein += parseFloat(row.querySelector(".inp-protein").value || 0);
+      });
+      $("preview-total-kcal").textContent = kcal;
+      $("preview-total-protein").textContent = Math.round(protein * 10) / 10;
+    }
+
+    function renderPreview(result, rawText) {
+      const box = $("preview-items");
+      box.innerHTML = "";
+      (result.items || []).forEach((it) => {
+        const row = document.createElement("div");
+        row.setAttribute("data-row", "");
+        row.dataset.name = it.name;
+        row.dataset.amount = it.amount || "";
+        row.className = "flex items-center gap-2 text-sm";
+        row.innerHTML = `
+          <div class="flex-1 min-w-0">
+            <p class="font-medium truncate">${escapeHtml(it.name)}</p>
+            <p class="text-slate-400 text-xs">${escapeHtml(it.amount || "")}</p>
+          </div>
+          <input type="number" class="inp-kcal w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right" value="${it.kcal}" />
+          <span class="text-slate-500 text-xs">kcal</span>
+          <input type="number" step="0.1" class="inp-protein w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right" value="${it.protein}" />
+          <span class="text-slate-500 text-xs">g</span>`;
+        box.appendChild(row);
+      });
+      box.querySelectorAll("input").forEach((i) => i.addEventListener("input", recomputeTotals));
+      recomputeTotals();
+      $("preview").dataset.rawText = rawText;
+      $("preview").classList.remove("hidden");
+      // In "Nur Schätzen" mode we still allow saving — button stays available.
+      $("preview").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    $("save-btn").addEventListener("click", async () => {
+      const items = [];
+      document.querySelectorAll("#preview-items [data-row]").forEach((row) => {
+        items.push({
+          name: row.dataset.name,
+          amount: row.dataset.amount,
+          kcal: parseInt(row.querySelector(".inp-kcal").value || 0, 10),
+          protein: parseFloat(row.querySelector(".inp-protein").value || 0),
+        });
+      });
+      const payload = {
+        raw_text: $("preview").dataset.rawText || "",
+        items,
+        total_kcal: parseInt($("preview-total-kcal").textContent, 10),
+        total_protein: parseFloat($("preview-total-protein").textContent),
+      };
+      setLoading($("save-btn"), true);
+      try {
+        await api("/api/meal/save", { method: "POST", body: payload });
+        $("preview").classList.add("hidden");
+        $("meal-input").value = "";
+        loadDashboard();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setLoading($("save-btn"), false);
+      }
+    });
+
+    // ---------- Boot ----------
+    if (token()) showApp(); else showAuth();
+  })();
+  </script>
+</body>
+</html>

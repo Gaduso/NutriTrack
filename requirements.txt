@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pyjwt
+passlib[bcrypt]
+bcrypt<4.1
+httpx
+pydantic-settings
+jinja2
+python-multipart

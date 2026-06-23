@@ -1,0 +1,23 @@
+# Normalize line endings to LF on checkin, auto on checkout
+* text=auto eol=lf
+
+# Explicit text files
+*.py    text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+*.md    text eol=lf
+*.css   text eol=lf
+*.js    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+
+# Binary assets — never normalize
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db  binary
