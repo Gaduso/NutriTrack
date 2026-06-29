@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     JWT_SECRET: str = "change-me-in-production-please-use-a-long-random-string"
 
+    # Invite secret required to register a new account (gatekeeps sign-ups).
+    REGISTER_SECRET: str = "10987"
+
     # OpenRouter
     OPENROUTER_URL: str = "https://openrouter.ai/api/v1/chat/completions"
     OPENROUTER_MODEL: str = "google/gemma-4-31b-it:free"

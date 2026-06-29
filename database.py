@@ -69,6 +69,22 @@ def init_db() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_meals_user_ts ON meals (user_id, timestamp);"
         )
+        # Friend graph: one row per relationship, status pending/accepted.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS friendships (
+                id           SERIAL PRIMARY KEY,
+                requester_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                addressee_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                status       TEXT NOT NULL DEFAULT 'pending',
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE (requester_id, addressee_id)
+            );
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships (addressee_id, status);"
+        )
 
         # --- Additive migrations for pre-existing tables ---
         conn.execute(

@@ -47,6 +47,8 @@
           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500" />
         <input id="password" type="password" autocomplete="current-password" placeholder="Passwort"
           class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500" />
+        <input id="secret" type="password" autocomplete="off" placeholder="Einladungs-Geheimnis"
+          class="hidden w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500" />
         <p id="auth-error" class="text-rose-400 text-sm hidden"></p>
         <button type="submit" id="auth-submit"
           class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
@@ -67,6 +69,9 @@
         <h1 class="text-xl font-bold">NutriTrack <span class="text-emerald-400">AI</span></h1>
       </div>
       <div class="flex items-center gap-3">
+        <button id="friends-btn" class="relative text-slate-400 hover:text-slate-200 text-xl" title="Freunde">👥
+          <span id="friends-badge" class="hidden absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] leading-none rounded-full px-1.5 py-0.5"></span>
+        </button>
         <button id="profile-btn" class="text-slate-400 hover:text-slate-200 text-xl" title="Profil / Ziele">⚙️</button>
         <button id="logout-btn" class="text-slate-400 hover:text-slate-200 text-sm">Abmelden</button>
       </div>
@@ -95,27 +100,20 @@
     <textarea id="meal-input" rows="3" placeholder="Was hast du gegessen?..."
       class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 focus:outline-none focus:border-emerald-500 resize-none"></textarea>
 
-    <div class="grid grid-cols-2 gap-3 mt-3">
-      <button id="estimate-btn"
-        class="bg-indigo-600 hover:bg-indigo-700 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
-        <span>Nur Schätzen</span>
-      </button>
+    <div class="mt-3">
       <button id="analyze-btn"
-        class="bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+        class="w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
         <span>Analysieren &amp; Hinzufügen</span>
       </button>
     </div>
 
-    <!-- Photo + Barcode -->
-    <div class="grid grid-cols-2 gap-3 mt-3">
+    <!-- Photo (Barcode temporarily hidden — scanning unreliable) -->
+    <div class="mt-3">
       <button id="photo-btn"
-        class="bg-slate-800 hover:bg-slate-700 border border-slate-700 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
+        class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
         <span>📷 Foto</span>
       </button>
-      <button id="scan-btn"
-        class="bg-slate-800 hover:bg-slate-700 border border-slate-700 transition rounded-xl py-3 font-semibold flex items-center justify-center gap-2">
-        <span>🔳 Barcode</span>
-      </button>
+      <button id="scan-btn" class="hidden">Barcode</button>
     </div>
     <input id="photo-input" type="file" accept="image/*" capture="environment" class="hidden" />
     <input id="barcode-input" type="file" accept="image/*" capture="environment" class="hidden" />
@@ -250,6 +248,60 @@
     </div>
   </div>
 
+  <!-- ============ FRIENDS MODAL ============ -->
+  <div id="friends-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+    <div class="w-full max-w-sm bg-slate-800 rounded-2xl p-6 border border-slate-700 animate-fade max-h-[85vh] overflow-y-auto">
+
+      <!-- Panel: friends list -->
+      <div id="friends-panel">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold">Freunde</h2>
+          <button id="friends-close" class="text-slate-400 hover:text-slate-200">✕</button>
+        </div>
+
+        <div class="flex gap-2 mb-1">
+          <input id="friend-add-name" type="text" placeholder="Benutzername"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+          <button id="friend-add-btn"
+            class="bg-emerald-500 hover:bg-emerald-600 transition rounded-xl px-4 text-sm font-semibold flex items-center justify-center">
+            <span>Hinzufügen</span>
+          </button>
+        </div>
+        <p id="friend-add-msg" class="text-xs mb-4 hidden"></p>
+
+        <div id="friend-incoming-wrap" class="hidden mb-4">
+          <p class="text-slate-400 text-xs uppercase tracking-wide mb-2">Anfragen an dich</p>
+          <div id="friend-incoming" class="space-y-2"></div>
+        </div>
+
+        <div id="friend-outgoing-wrap" class="hidden mb-4">
+          <p class="text-slate-400 text-xs uppercase tracking-wide mb-2">Gesendet</p>
+          <div id="friend-outgoing" class="space-y-2"></div>
+        </div>
+
+        <p class="text-slate-400 text-xs uppercase tracking-wide mb-2">Deine Freunde</p>
+        <div id="friend-list" class="space-y-2"></div>
+        <p id="friend-empty" class="text-slate-500 text-sm hidden">Noch keine Freunde. Füge jemanden über den Benutzernamen hinzu.</p>
+      </div>
+
+      <!-- Panel: a friend's meals (copy parts into your own log) -->
+      <div id="friend-meals-panel" class="hidden">
+        <div class="flex items-center justify-between mb-1">
+          <button id="friend-back" class="text-slate-400 hover:text-slate-200 text-sm flex items-center gap-1">‹ Zurück</button>
+          <button id="friends-close-2" class="text-slate-400 hover:text-slate-200">✕</button>
+        </div>
+        <h2 class="text-lg font-bold mb-1"><span id="friend-meals-name"></span></h2>
+        <p class="text-slate-400 text-sm mb-4">Wähle aus, was du übernehmen möchtest.</p>
+        <div id="friend-meals-list" class="space-y-2"></div>
+        <p id="friend-meals-empty" class="text-slate-500 text-sm hidden">Heute noch keine Einträge.</p>
+        <button id="friend-copy-btn"
+          class="hidden w-full bg-emerald-500 hover:bg-emerald-600 transition rounded-xl py-3 mt-4 font-semibold flex items-center justify-center gap-2">
+          <span>Auswahl übernehmen</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Off-screen container used by Html5Qrcode.scanFile to decode barcode photos -->
   <div id="reader" style="position:absolute;width:0;height:0;overflow:hidden"></div>
 
@@ -314,6 +366,7 @@
       $("app-view").classList.remove("hidden");
       loadDashboard();
       loadStats(currentPeriod);
+      loadFriends();
     }
 
     // ---------- Auth ----------
@@ -322,6 +375,7 @@
       $("auth-submit-label").textContent = isRegister ? "Registrieren" : "Anmelden";
       $("auth-subtitle").textContent = isRegister ? "Erstelle dein Konto." : "Melde dich an, um zu tracken.";
       $("auth-toggle").textContent = isRegister ? "Schon ein Konto? Anmelden" : "Noch kein Konto? Registrieren";
+      $("secret").classList.toggle("hidden", !isRegister);
       $("auth-error").classList.add("hidden");
     });
 
@@ -329,11 +383,13 @@
       e.preventDefault();
       const username = $("username").value.trim();
       const password = $("password").value;
+      const secret = $("secret").value;
       $("auth-error").classList.add("hidden");
       setLoading($("auth-submit"), true);
       try {
+        const body = isRegister ? { username, password, secret } : { username, password };
         const data = await api(isRegister ? "/api/register" : "/api/login", {
-          method: "POST", body: { username, password },
+          method: "POST", body,
         });
         setToken(data.token);
         showApp();
@@ -497,7 +553,6 @@
       }
     }
 
-    $("estimate-btn").addEventListener("click", () => runAnalyze($("estimate-btn")));
     $("analyze-btn").addEventListener("click", () => runAnalyze($("analyze-btn")));
     $("preview-close").addEventListener("click", () => $("preview").classList.add("hidden"));
 
@@ -732,6 +787,192 @@
         alert(err.message);
       } finally {
         setLoading($("sr-save"), false);
+      }
+    });
+
+    // ---------- Friends ----------
+    function openFriends() {
+      showFriendsPanel();
+      $("friends-modal").classList.remove("hidden");
+      loadFriends();
+    }
+    function closeFriends() { $("friends-modal").classList.add("hidden"); }
+    function showFriendsPanel() {
+      $("friends-panel").classList.remove("hidden");
+      $("friend-meals-panel").classList.add("hidden");
+    }
+
+    $("friends-btn").addEventListener("click", openFriends);
+    $("friends-close").addEventListener("click", closeFriends);
+    $("friends-close-2").addEventListener("click", closeFriends);
+    $("friend-back").addEventListener("click", showFriendsPanel);
+    $("friends-modal").addEventListener("click", (e) => {
+      if (e.target === $("friends-modal")) closeFriends();
+    });
+
+    function setBadge(n) {
+      const b = $("friends-badge");
+      if (n > 0) { b.textContent = n; b.classList.remove("hidden"); }
+      else b.classList.add("hidden");
+    }
+
+    async function loadFriends() {
+      let data;
+      try { data = await api("/api/friends"); } catch (_) { return; }
+      setBadge((data.incoming || []).length);
+      if (!$("friends-modal").classList.contains("hidden")) renderFriends(data);
+    }
+
+    function renderFriends(data) {
+      // Incoming requests
+      const inc = $("friend-incoming");
+      inc.innerHTML = "";
+      $("friend-incoming-wrap").classList.toggle("hidden", !(data.incoming || []).length);
+      (data.incoming || []).forEach((r) => {
+        const el = document.createElement("div");
+        el.className = "bg-slate-900 rounded-xl p-3 border border-slate-700 flex items-center justify-between gap-2";
+        el.innerHTML = `
+          <span class="font-medium truncate">${escapeHtml(r.username)}</span>
+          <span class="flex gap-2 shrink-0">
+            <button data-acc="${r.id}" class="bg-emerald-500 hover:bg-emerald-600 transition rounded-lg px-3 py-1 text-sm font-semibold">Annehmen</button>
+            <button data-dec="${r.id}" class="text-slate-400 hover:text-rose-400 text-sm">Ablehnen</button>
+          </span>`;
+        inc.appendChild(el);
+      });
+
+      // Outgoing (pending) requests
+      const out = $("friend-outgoing");
+      out.innerHTML = "";
+      $("friend-outgoing-wrap").classList.toggle("hidden", !(data.outgoing || []).length);
+      (data.outgoing || []).forEach((r) => {
+        const el = document.createElement("div");
+        el.className = "bg-slate-900 rounded-xl p-3 border border-slate-700 flex items-center justify-between gap-2 text-sm";
+        el.innerHTML = `
+          <span class="font-medium truncate">${escapeHtml(r.username)}</span>
+          <span class="text-slate-500">ausstehend…</span>`;
+        out.appendChild(el);
+      });
+
+      // Friends list
+      const list = $("friend-list");
+      list.innerHTML = "";
+      $("friend-empty").classList.toggle("hidden", (data.friends || []).length > 0);
+      (data.friends || []).forEach((f) => {
+        const el = document.createElement("div");
+        el.className = "bg-slate-900 rounded-xl p-3 border border-slate-700 flex items-center justify-between gap-2";
+        el.innerHTML = `
+          <button data-meals="${f.id}" data-name="${escapeHtml(f.username)}" class="flex-1 text-left font-medium truncate hover:text-emerald-400">${escapeHtml(f.username)}</button>
+          <span class="flex gap-2 shrink-0 items-center">
+            <button data-meals="${f.id}" data-name="${escapeHtml(f.username)}" class="text-emerald-400 hover:text-emerald-300 text-sm">Mahlzeiten ›</button>
+            <button data-rm="${f.id}" class="text-slate-500 hover:text-rose-400" title="Entfernen">🗑️</button>
+          </span>`;
+        list.appendChild(el);
+      });
+
+      inc.querySelectorAll("[data-acc]").forEach((b) =>
+        b.addEventListener("click", () => respondFriend(b.dataset.acc, "accept")));
+      inc.querySelectorAll("[data-dec]").forEach((b) =>
+        b.addEventListener("click", () => respondFriend(b.dataset.dec, "decline")));
+      list.querySelectorAll("[data-rm]").forEach((b) =>
+        b.addEventListener("click", async () => {
+          if (!confirm("Freund entfernen?")) return;
+          try { await api("/api/friends/" + b.dataset.rm, { method: "DELETE" }); loadFriends(); }
+          catch (err) { alert(err.message); }
+        }));
+      list.querySelectorAll("[data-meals]").forEach((b) =>
+        b.addEventListener("click", () => openFriendMeals(b.dataset.meals, b.dataset.name)));
+    }
+
+    async function respondFriend(id, action) {
+      try { await api("/api/friends/" + id + "/" + action, { method: "POST" }); loadFriends(); }
+      catch (err) { alert(err.message); }
+    }
+
+    $("friend-add-btn").addEventListener("click", addFriend);
+    $("friend-add-name").addEventListener("keydown", (e) => { if (e.key === "Enter") addFriend(); });
+    async function addFriend() {
+      const username = $("friend-add-name").value.trim();
+      if (!username) return;
+      const msg = $("friend-add-msg");
+      msg.classList.add("hidden");
+      setLoading($("friend-add-btn"), true);
+      try {
+        const r = await api("/api/friends/request", { method: "POST", body: { username } });
+        $("friend-add-name").value = "";
+        msg.textContent = r.status === "accepted"
+          ? `Mit ${username} befreundet!` : `Anfrage an ${username} gesendet.`;
+        msg.className = "text-xs mb-4 text-emerald-400";
+        loadFriends();
+      } catch (err) {
+        msg.textContent = err.message;
+        msg.className = "text-xs mb-4 text-rose-400";
+      } finally {
+        setLoading($("friend-add-btn"), false);
+      }
+    }
+
+    async function openFriendMeals(friendId, name) {
+      $("friends-panel").classList.add("hidden");
+      $("friend-meals-panel").classList.remove("hidden");
+      $("friend-meals-name").textContent = name;
+      $("friend-meals-list").innerHTML = "";
+      $("friend-meals-empty").classList.add("hidden");
+      $("friend-copy-btn").classList.add("hidden");
+      try {
+        const d = await api("/api/friends/" + friendId + "/meals?tz=" + encodeURIComponent(TZ));
+        renderFriendMeals(d.items || []);
+      } catch (err) { alert(err.message); showFriendsPanel(); }
+    }
+
+    function renderFriendMeals(items) {
+      const wrap = $("friend-meals-list");
+      wrap.innerHTML = "";
+      $("friend-meals-empty").classList.toggle("hidden", items.length > 0);
+      $("friend-copy-btn").classList.toggle("hidden", items.length === 0);
+
+      MEAL_TYPES.forEach((mt) => {
+        const group = items.filter((it) => (it.meal_type || "snack") === mt.key);
+        if (!group.length) return;
+        const header = document.createElement("p");
+        header.className = "text-slate-400 text-xs mt-3 first:mt-0";
+        header.textContent = `${mt.icon} ${mt.label}`;
+        wrap.appendChild(header);
+        group.forEach((it) => {
+          const meta = [it.amount, `${it.kcal} kcal`, `${it.protein} g`].filter(Boolean).join(" · ");
+          const el = document.createElement("label");
+          el.className = "flex items-center gap-3 bg-slate-900 rounded-xl p-3 border border-slate-700 cursor-pointer";
+          el.innerHTML = `
+            <input type="checkbox" class="fcopy w-4 h-4 accent-emerald-500 shrink-0" />
+            <div class="min-w-0">
+              <p class="font-medium truncate">${escapeHtml(it.name)}</p>
+              <p class="text-slate-400 text-xs truncate">${escapeHtml(meta)}</p>
+            </div>`;
+          const cb = el.querySelector(".fcopy");
+          cb._item = { name: it.name, amount: it.amount || "", kcal: it.kcal || 0, protein: it.protein || 0, meal_type: it.meal_type || "snack" };
+          wrap.appendChild(el);
+        });
+      });
+    }
+
+    $("friend-copy-btn").addEventListener("click", async () => {
+      const chosen = [...document.querySelectorAll("#friend-meals-list .fcopy")]
+        .filter((cb) => cb.checked).map((cb) => cb._item);
+      if (!chosen.length) { alert("Nichts ausgewählt."); return; }
+      // Preserve each item's meal type by saving one group per type.
+      const groups = {};
+      chosen.forEach((it) => { (groups[it.meal_type] ||= []).push(it); });
+      setLoading($("friend-copy-btn"), true);
+      try {
+        for (const [meal_type, its] of Object.entries(groups)) {
+          await api("/api/meal/save", { method: "POST", body: { raw_text: "Von Freund übernommen", meal_type, items: its } });
+        }
+        closeFriends();
+        loadDashboard();
+        loadStats(currentPeriod);
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        setLoading($("friend-copy-btn"), false);
       }
     });
 

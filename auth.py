@@ -32,10 +32,12 @@ def create_access_token(user_id: int, username: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def register_user(username: str, password: str) -> dict:
+def register_user(username: str, password: str, secret: str = "") -> dict:
     username = username.strip()
     if not username or not password:
         raise HTTPException(status_code=400, detail="Benutzername und Passwort erforderlich.")
+    if (secret or "").strip() != settings.REGISTER_SECRET:
+        raise HTTPException(status_code=403, detail="Ungültiges Registrierungs-Geheimnis.")
     with get_connection() as conn:
         existing = conn.execute(
             "SELECT id FROM users WHERE username = %s", (username,)

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 import auth
+import friends
 from database import MEAL_TYPES, get_connection, init_db
 from openfoodfacts import lookup_product
 from openrouter_client import analyze_meal, analyze_meal_image
@@ -32,6 +33,15 @@ def _startup() -> None:
 class Credentials(BaseModel):
     username: str = Field(min_length=1)
     password: str = Field(min_length=1)
+
+
+class RegisterRequest(Credentials):
+    # Invite secret gatekeeping sign-ups (validated server-side).
+    secret: str = ""
+
+
+class FriendRequest(BaseModel):
+    username: str = Field(min_length=1)
 
 
 class AnalyzeRequest(BaseModel):
@@ -100,13 +110,48 @@ def index(request: Request):
 # Auth endpoints
 # ---------------------------------------------------------------------------
 @app.post("/api/register")
-def register(creds: Credentials):
-    return auth.register_user(creds.username, creds.password)
+def register(creds: RegisterRequest):
+    return auth.register_user(creds.username, creds.password, creds.secret)
 
 
 @app.post("/api/login")
 def login(creds: Credentials):
     return auth.authenticate_user(creds.username, creds.password)
+
+
+# ---------------------------------------------------------------------------
+# Friends endpoints (send/accept requests, list friends, view their meals)
+# ---------------------------------------------------------------------------
+@app.get("/api/friends")
+def friends_list(user=Depends(auth.get_current_user)):
+    return friends.list_friends(user["id"])
+
+
+@app.post("/api/friends/request")
+def friends_request(body: FriendRequest, user=Depends(auth.get_current_user)):
+    return friends.send_request(user["id"], body.username)
+
+
+@app.post("/api/friends/{req_id}/accept")
+def friends_accept(req_id: int, user=Depends(auth.get_current_user)):
+    return friends.respond_request(user["id"], req_id, accept=True)
+
+
+@app.post("/api/friends/{req_id}/decline")
+def friends_decline(req_id: int, user=Depends(auth.get_current_user)):
+    return friends.respond_request(user["id"], req_id, accept=False)
+
+
+@app.delete("/api/friends/{friend_id}")
+def friends_remove(friend_id: int, user=Depends(auth.get_current_user)):
+    return friends.remove_friend(user["id"], friend_id)
+
+
+@app.get("/api/friends/{friend_id}/meals")
+def friends_meals(
+    friend_id: int, tz: str = Query("UTC"), user=Depends(auth.get_current_user)
+):
+    return friends.friend_meals(user["id"], friend_id, _safe_tz(tz))
 
 
 # ---------------------------------------------------------------------------
